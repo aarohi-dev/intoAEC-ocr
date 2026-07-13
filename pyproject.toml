@@ -48,6 +48,7 @@ Changelog = "https://github.com/allenai/olmocr/blob/main/CHANGELOG.md"
 
 [project.scripts]
 olmocr = "olmocr.pipeline:cli_main"
+boqparse = "boqparser.cli:main"
 
 [project.optional-dependencies]
 gpu = [

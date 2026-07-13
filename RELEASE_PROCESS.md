@@ -20,5 +20,4 @@ If for some reason the GitHub Actions release workflow failed with an error that
 ```bash
 git tag -l | xargs git tag -d && git fetch -t
 ```
-
 Then repeat the steps above.

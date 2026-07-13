@@ -1,0 +1,25 @@
+# BOQ Parser additional dependencies
+# The olmocr package (and its deps like pypdfium2, pypdf, Pillow, httpx) must already be installed.
+
+# API
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# Excel export
+openpyxl>=3.1.2
+
+# CLI
+click>=8.1.7
+
+# Fuzzy matching for domain correction
+rapidfuzz>=3.9.0
+
+# HTML table parsing (for olmocr v4 HTML table output)
+lxml>=5.2.0
+
+# YAML (already in olmocr, but listed for clarity)
+PyYAML>=6.0
+
+# numpy for x-coordinate clustering
+numpy>=1.26.0
