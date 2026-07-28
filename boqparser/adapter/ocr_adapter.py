@@ -53,6 +53,53 @@ class PageOCRResult:
     ocr_mode: str = "fallback"  # "vlm" or "fallback"
 
 
+def page_ocr_result_to_dict(res: PageOCRResult) -> dict:
+    return {
+        "page_num": res.page_num,
+        "is_table": res.is_table,
+        "is_diagram": res.is_diagram,
+        "raw_text": res.raw_text,
+        "raw_html": res.raw_html,
+        "primary_language": res.primary_language,
+        "ocr_mode": res.ocr_mode,
+        "tokens": [
+            {
+                "text": t.text,
+                "confidence": t.confidence,
+                "bbox": t.bbox,
+                "page_num": t.page_num,
+                "is_table": t.is_table,
+                "is_diagram": t.is_diagram,
+                "raw_html": t.raw_html,
+            }
+            for t in res.tokens
+        ],
+    }
+
+def dict_to_page_ocr_result(d: dict) -> PageOCRResult:
+    return PageOCRResult(
+        page_num=d["page_num"],
+        is_table=d["is_table"],
+        is_diagram=d.get("is_diagram", False),
+        raw_text=d["raw_text"],
+        raw_html=d.get("raw_html"),
+        primary_language=d.get("primary_language"),
+        ocr_mode=d.get("ocr_mode", "fallback"),
+        tokens=[
+            OCRToken(
+                text=t["text"],
+                confidence=t["confidence"],
+                bbox=t["bbox"],
+                page_num=t.get("page_num", d["page_num"]),
+                is_table=t.get("is_table", False),
+                is_diagram=t.get("is_diagram", False),
+                raw_html=t.get("raw_html"),
+            )
+            for t in d.get("tokens", [])
+        ],
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # HTML table text extraction helper
 # ─────────────────────────────────────────────────────────────────────────────
@@ -288,46 +335,10 @@ class OCRAdapter:
 
     # ── VLM extraction ───────────────────────────────────────────────────────
 
-    def _call_vlm(self, pdf_path: str, page_num: int) -> PageOCRResult:
-        """
-        Call the olmocr vLLM server for a single page.
-        Returns a PageOCRResult.
-        """
-        import httpx
-        from olmocr.prompts import build_no_anchoring_v4_yaml_prompt, PageResponse
+    def _parse_model_output(self, model_output: str, page_num: int) -> PageOCRResult:
+        """Parse raw vLLM server choice output into a PageOCRResult."""
+        from olmocr.prompts import PageResponse
         from olmocr.train.front_matter import FrontMatterParser
-
-        image_b64 = self._render_page_to_base64png(pdf_path, page_num, self.target_longest_image_dim)
-        prompt_text = build_no_anchoring_v4_yaml_prompt()
-
-        payload = {
-            "model": self.model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt_text},
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
-                    ],
-                }
-            ],
-            "max_tokens": 8000,
-            "temperature": 0.1,
-        }
-
-        try:
-            resp = httpx.post(
-                f"{self.server_url}/chat/completions",
-                json=payload,
-                timeout=120.0,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as exc:
-            logger.warning(f"VLM call failed for page {page_num}: {exc}. Using fallback.")
-            return self._fallback_extract(pdf_path, page_num)
-
-        model_output = data["choices"][0]["message"]["content"]
 
         parser = FrontMatterParser(front_matter_class=PageResponse)
         try:
@@ -377,6 +388,104 @@ class OCRAdapter:
             ocr_mode="vlm",
         )
 
+    def _call_vlm(self, pdf_path: str, page_num: int) -> PageOCRResult:
+        """
+        Call the olmocr vLLM server for a single page.
+        Returns a PageOCRResult.
+        """
+        import httpx
+        from olmocr.prompts import build_no_anchoring_v4_yaml_prompt
+
+        image_b64 = self._render_page_to_base64png(pdf_path, page_num, self.target_longest_image_dim)
+        prompt_text = build_no_anchoring_v4_yaml_prompt()
+
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+                    ],
+                }
+            ],
+            "max_tokens": 8000,
+            "temperature": 0.1,
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.server_url}/chat/completions",
+                json=payload,
+                timeout=120.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.warning(f"VLM call failed for page {page_num}: {exc}. Using fallback.")
+            return self._fallback_extract(pdf_path, page_num)
+
+        model_output = data["choices"][0]["message"]["content"]
+        return self._parse_model_output(model_output, page_num)
+
+    def _call_vlm_hybrid(self, pdf_path: str, page_num: int, extracted_text: str) -> PageOCRResult:
+        """
+        Call the olmocr vLLM server to structure locally-extracted page text.
+        """
+        import httpx
+
+        prompt_text = (
+            "You are an expert construction document parser. Parse the following text "
+            "extracted from page " + str(page_num) + " of a construction PDF into the "
+            "olmocr YAML/HTML format. Ensure tables are formatted as HTML <table> and "
+            "natural text is structured clearly.\n\n"
+            f"Extracted Text:\n{extracted_text}"
+        )
+
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                    ],
+                }
+            ],
+            "max_tokens": 8000,
+            "temperature": 0.1,
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.server_url}/chat/completions",
+                json=payload,
+                timeout=120.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.warning(f"VLM hybrid call failed for page {page_num}: {exc}. Using fallback.")
+            return self._fallback_extract(pdf_path, page_num)
+
+        model_output = data["choices"][0]["message"]["content"]
+        return self._parse_model_output(model_output, page_num)
+
+    def _has_selectable_text(self, pdf_path: str, page_num: int) -> Tuple[bool, str]:
+        """Check if page has selectable text locally. Returns (has_text, text_content)."""
+        try:
+            import fitz
+            doc = fitz.open(pdf_path)
+            page = doc[page_num - 1]
+            text = page.get_text()
+            doc.close()
+            if len(text.strip()) > 100:
+                return True, text
+        except Exception as exc:
+            logger.debug(f"Local text extraction check failed on page {page_num}: {exc}")
+        return False, ""
+
     # ── fallback extraction ──────────────────────────────────────────────────
 
     def _fallback_extract(self, pdf_path: str, page_num: int) -> PageOCRResult:
@@ -396,47 +505,61 @@ class OCRAdapter:
 
     # ── public API ───────────────────────────────────────────────────────────
 
-    def extract(self, pdf_path: str, page_num: int) -> PageOCRResult:
+    def extract(self, pdf_path: str, page_num: int, pdf_hash: Optional[str] = None, task_manager: Optional[Any] = None) -> PageOCRResult:
         """
-        Extract OCR tokens for a single page.
-
-        Args:
-            pdf_path: Path to the PDF file.
-            page_num: 1-indexed page number.
-
-        Returns:
-            PageOCRResult with normalised OCRToken list.
+        Extract OCR tokens for a single page with caching support.
         """
+        if task_manager and pdf_hash:
+            cached = task_manager.get_cached_page(pdf_hash, page_num)
+            if cached:
+                logger.info(f"Page {page_num}: OCR Cache Hit!")
+                return dict_to_page_ocr_result(cached)
+
         use_vlm = self._ensure_server_checked()
+        has_text, text_content = self._has_selectable_text(pdf_path, page_num)
+
+        result = None
         if use_vlm:
             try:
-                return self._call_vlm(pdf_path, page_num)
+                if has_text:
+                    logger.info(f"Page {page_num}: Hybrid Mode — local text extracted ({len(text_content)} chars). Structuring via VLM.")
+                    result = self._call_vlm_hybrid(pdf_path, page_num, text_content)
+                else:
+                    logger.info(f"Page {page_num}: Image Mode — no local text. Rendering to base64 for VLM OCR.")
+                    result = self._call_vlm(pdf_path, page_num)
             except Exception as exc:
                 logger.warning(f"VLM extraction failed for page {page_num}: {exc}. Falling back.")
-        return self._fallback_extract(pdf_path, page_num)
 
-    def extract_all(self, pdf_path: str, total_pages: int) -> List[PageOCRResult]:
+        if result is None:
+            result = self._fallback_extract(pdf_path, page_num)
+
+        if task_manager and pdf_hash:
+            task_manager.cache_page(pdf_hash, page_num, page_ocr_result_to_dict(result))
+
+        return result
+
+    def extract_all(self, pdf_path: str, total_pages: int, pdf_hash: Optional[str] = None, task_manager: Optional[Any] = None) -> List[PageOCRResult]:
         """Extract OCR results for all pages sequentially."""
         results = []
         for page_num in range(1, total_pages + 1):
             logger.info(f"OCR: page {page_num}/{total_pages}")
-            results.append(self.extract(pdf_path, page_num))
+            results.append(self.extract(pdf_path, page_num, pdf_hash, task_manager))
         return results
 
     # ── async API ────────────────────────────────────────────────────────────
 
-    async def extract_async(self, pdf_path: str, page_num: int) -> PageOCRResult:
+    async def extract_async(self, pdf_path: str, page_num: int, pdf_hash: Optional[str] = None, task_manager: Optional[Any] = None) -> PageOCRResult:
         """Async wrapper around extract()."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.extract, pdf_path, page_num)
+        return await loop.run_in_executor(None, self.extract, pdf_path, page_num, pdf_hash, task_manager)
 
-    async def extract_all_async(self, pdf_path: str, total_pages: int) -> List[PageOCRResult]:
-        """Extract all pages concurrently (limited to 4 at a time)."""
-        sem = asyncio.Semaphore(4)
+    async def extract_all_async(self, pdf_path: str, total_pages: int, pdf_hash: Optional[str] = None, task_manager: Optional[Any] = None) -> List[PageOCRResult]:
+        """Extract all pages concurrently (limited to 3 at a time) with caching support."""
+        sem = asyncio.Semaphore(3)
 
         async def _extract_limited(page_num):
             async with sem:
-                return await self.extract_async(pdf_path, page_num)
+                return await self.extract_async(pdf_path, page_num, pdf_hash, task_manager)
 
         tasks = [_extract_limited(p) for p in range(1, total_pages + 1)]
         return await asyncio.gather(*tasks)

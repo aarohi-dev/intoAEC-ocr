@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse, HTMLResponse
 
@@ -89,8 +89,66 @@ async def health():
     }
 
 
+async def _run_extraction_task(task_id: str, pdf_path: str, fallback: bool, tolerance: float, dpi: int, server_url: Optional[str]):
+    from boqparser.api.task_manager import TaskManager
+    tm = TaskManager()
+    try:
+        pdf_hash = tm.get_pdf_hash(pdf_path)
+        
+        parser = BOQParser(
+            server_url=server_url or os.environ.get("OLMOCR_SERVER_URL", "http://localhost:8000/v1"),
+            fallback_mode=fallback,
+            dpi=dpi,
+            tolerance=tolerance,
+            task_manager=tm,
+            pdf_hash=pdf_hash,
+        )
+        
+        tm.update_task_progress(task_id, 20, "processing")
+        
+        result = await parser.parse_async(pdf_path)
+        
+        tm.update_task_progress(task_id, 80, "processing")
+        
+        result_dict = result.to_dict()
+        
+        # Inject Pricing RAG recommendations
+        try:
+            from boqparser.domain.pricing_rag import PricingRAG
+            rag = PricingRAG()
+            
+            all_items = result_dict.get("all_items", [])
+            for item in all_items:
+                desc = item.get("description", "")
+                if desc:
+                    item["suggested_rates"] = rag.recommend_rates(desc)
+                    
+            def inject_sections_rag(sections):
+                for s in sections:
+                    for item in s.get("items", []):
+                        desc = item.get("description", "")
+                        if desc:
+                            item["suggested_rates"] = rag.recommend_rates(desc)
+                    if s.get("children"):
+                        inject_sections_rag(s["children"])
+            inject_sections_rag(result_dict.get("sections", []))
+        except Exception as rag_exc:
+            logger.warning(f"Failed to inject RAG suggestions: {rag_exc}")
+            
+        tm.complete_task(task_id, result_dict)
+        
+        try:
+            os.unlink(pdf_path)
+        except Exception:
+            pass
+    except Exception as exc:
+        logger.exception(f"Background task {task_id} failed: {exc}")
+        tm.fail_task(task_id, str(exc))
+
+
 @app.post("/extract")
 async def extract(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="PDF file to parse"),
     server_url: Optional[str] = Form(None),
     fallback: bool = Form(False),
@@ -98,26 +156,90 @@ async def extract(
     dpi: int = Form(300),
 ):
     """
-    Parse a PDF and return the full structured result as JSON.
+    Start PDF parsing as a background task. Returns task_id.
     """
+    import uuid
     pdf_path = await _save_upload(file)
-    try:
-        parser = BOQParser(
-            server_url=server_url or os.environ.get("OLMOCR_SERVER_URL", "http://localhost:8000/v1"),
-            fallback_mode=fallback,
-            dpi=dpi,
-            tolerance=tolerance,
+    task_id = str(uuid.uuid4())
+    
+    from boqparser.api.task_manager import TaskManager
+    tm = TaskManager()
+    tm.create_task(task_id, pdf_path)
+    
+    background_tasks.add_task(
+        _run_extraction_task,
+        task_id=task_id,
+        pdf_path=pdf_path,
+        fallback=fallback,
+        tolerance=tolerance,
+        dpi=dpi,
+        server_url=server_url
+    )
+    
+    return JSONResponse(
+        status_code=202,
+        content={"task_id": task_id, "status": "processing", "progress": 0}
+    )
+
+
+@app.get("/tasks/{task_id}")
+async def get_task_status(task_id: str):
+    """Poll background task status and progress."""
+    from boqparser.api.task_manager import TaskManager
+    tm = TaskManager()
+    task = tm.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    if task["status"] == "completed":
+        return JSONResponse(content=task["result"])
+    elif task["status"] == "failed":
+        return JSONResponse(
+            status_code=500,
+            content={"task_id": task_id, "status": "failed", "error": task["error"]}
         )
-        result = parser.parse(pdf_path)
-        return JSONResponse(content=result.to_dict())
-    except Exception as exc:
-        logger.exception(f"/extract failed: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        try:
-            os.unlink(pdf_path)
-        except Exception:
-            pass
+    else:
+        return JSONResponse(
+            content={"task_id": task_id, "status": "processing", "progress": task["progress"]}
+        )
+
+
+@app.post("/tasks/{task_id}/resume")
+async def resume_task(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    server_url: Optional[str] = Form(None),
+    fallback: bool = Form(False),
+    tolerance: float = Form(0.02),
+    dpi: int = Form(300),
+):
+    """Resume a failed or interrupted background parsing task."""
+    from boqparser.api.task_manager import TaskManager
+    tm = TaskManager()
+    task = tm.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    pdf_path = task["pdf_path"]
+    if not pdf_path or not Path(pdf_path).exists():
+        raise HTTPException(status_code=400, detail="Source PDF file is missing on server, cannot resume")
+        
+    tm.update_task_progress(task_id, 0, "processing")
+    
+    background_tasks.add_task(
+        _run_extraction_task,
+        task_id=task_id,
+        pdf_path=pdf_path,
+        fallback=fallback,
+        tolerance=tolerance,
+        dpi=dpi,
+        server_url=server_url
+    )
+    
+    return JSONResponse(
+        status_code=202,
+        content={"task_id": task_id, "status": "processing", "progress": 0}
+    )
 
 
 @app.post("/extract/json")

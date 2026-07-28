@@ -174,6 +174,8 @@ class BOQParser:
         n_cols: int = 6,
         tolerance: float = 0.02,
         fuzzy_threshold: int = 85,
+        task_manager: Optional[Any] = None,
+        pdf_hash: Optional[str] = None,
     ):
         self.ocr_adapter   = OCRAdapter(server_url, model_name, fallback_mode)
         self.pdf_processor = PDFProcessor(dpi=dpi)
@@ -182,6 +184,8 @@ class BOQParser:
         self.hierarchy_detector  = HierarchyDetector()
         self.domain_corrector    = DomainCorrector(fuzzy_threshold=fuzzy_threshold)
         self.validator           = Validator(tolerance=tolerance)
+        self.task_manager        = task_manager
+        self.pdf_hash            = pdf_hash
 
     # ── main pipeline ─────────────────────────────────────────────────────────
 
@@ -198,6 +202,39 @@ class BOQParser:
         pdf_path = str(Path(pdf_path).resolve())
         logger.info(f"BOQParser.parse(): {pdf_path}")
 
+        # Auto-detect Rate Analysis
+        from boqparser.parser_rate_analysis import RateAnalysisParser
+        if RateAnalysisParser.detect(pdf_path):
+            logger.info("Rate Analysis format detected. Using RateAnalysisParser.")
+            ra_parser = RateAnalysisParser(tolerance=self.validator.tolerance)
+            sections, all_rows = ra_parser.parse(pdf_path)
+            
+            validation = self.validator.validate_all(all_rows, sections)
+            all_text = " ".join(row.description for row in all_rows)
+            project_name = _extract_project_name(all_text, pdf_path)
+            
+            metadata = {
+                "total_pages": self.pdf_processor.get_page_count(pdf_path),
+                "pdf_type": self.pdf_processor.detect_pdf_type(pdf_path),
+                "ocr_mode": "local_fitz_rate_analysis",
+                "total_items": len(all_rows),
+                "sections_found": len(sections),
+                "validation_issues": validation.invalid_rows,
+            }
+            
+            return ParseResult(
+                source_file=pdf_path,
+                project_name=project_name,
+                report_type="Rate Analysis Report",
+                pdf_type=metadata["pdf_type"],
+                ocr_mode="local_fitz_rate_analysis",
+                total_pages=metadata["total_pages"],
+                sections=sections,
+                all_rows=all_rows,
+                validation_summary=validation,
+                metadata=metadata,
+            )
+
         # ── Step 1: PDF info ──────────────────────────────────────────────────
         total_pages = self.pdf_processor.get_page_count(pdf_path)
         pdf_type    = self.pdf_processor.detect_pdf_type(pdf_path)
@@ -207,7 +244,7 @@ class BOQParser:
         logger.info(f"PDF: {total_pages} pages, type={pdf_type}")
 
         # ── Step 2: OCR all pages ─────────────────────────────────────────────
-        ocr_results: List[PageOCRResult] = self.ocr_adapter.extract_all(pdf_path, total_pages)
+        ocr_results: List[PageOCRResult] = self.ocr_adapter.extract_all(pdf_path, total_pages, self.pdf_hash, self.task_manager)
         ocr_mode = "vlm" if any(r.ocr_mode == "vlm" for r in ocr_results) else "fallback"
 
         # ── Step 3: Layout analysis ───────────────────────────────────────────
@@ -265,13 +302,47 @@ class BOQParser:
         pdf_path = str(Path(pdf_path).resolve())
         logger.info(f"BOQParser.parse_async(): {pdf_path}")
 
+        # Auto-detect Rate Analysis
+        from boqparser.parser_rate_analysis import RateAnalysisParser
+        if RateAnalysisParser.detect(pdf_path):
+            logger.info("Rate Analysis format detected (async path). Using RateAnalysisParser.")
+            loop = asyncio.get_event_loop()
+            ra_parser = RateAnalysisParser(tolerance=self.validator.tolerance)
+            sections, all_rows = await loop.run_in_executor(None, ra_parser.parse, pdf_path)
+            
+            validation = self.validator.validate_all(all_rows, sections)
+            all_text = " ".join(row.description for row in all_rows)
+            project_name = _extract_project_name(all_text, pdf_path)
+            
+            metadata = {
+                "total_pages": self.pdf_processor.get_page_count(pdf_path),
+                "pdf_type": self.pdf_processor.detect_pdf_type(pdf_path),
+                "ocr_mode": "local_fitz_rate_analysis",
+                "total_items": len(all_rows),
+                "sections_found": len(sections),
+                "validation_issues": validation.invalid_rows,
+            }
+            
+            return ParseResult(
+                source_file=pdf_path,
+                project_name=project_name,
+                report_type="Rate Analysis Report",
+                pdf_type=metadata["pdf_type"],
+                ocr_mode="local_fitz_rate_analysis",
+                total_pages=metadata["total_pages"],
+                sections=sections,
+                all_rows=all_rows,
+                validation_summary=validation,
+                metadata=metadata,
+            )
+
         total_pages = self.pdf_processor.get_page_count(pdf_path)
         pdf_type    = self.pdf_processor.detect_pdf_type(pdf_path)
         page_dims   = self.pdf_processor.get_page_dimensions(pdf_path)
         dim_tuples  = [(d["width_pts"], d["height_pts"]) for d in page_dims]
 
         # Async OCR
-        ocr_results = await self.ocr_adapter.extract_all_async(pdf_path, total_pages)
+        ocr_results = await self.ocr_adapter.extract_all_async(pdf_path, total_pages, self.pdf_hash, self.task_manager)
         ocr_mode = "vlm" if any(r.ocr_mode == "vlm" for r in ocr_results) else "fallback"
 
         layout_results = self.layout_analyzer.analyze_all(ocr_results, dim_tuples)

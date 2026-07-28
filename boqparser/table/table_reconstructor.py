@@ -40,9 +40,10 @@ class BOQRow:
     is_header_row: bool = False
     is_subtotal_row: bool = False
     confidence: float = 1.0
+    groups: List[Any] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "item_no": self.item_no,
             "description": self.description,
             "quantity": self.quantity,
@@ -50,6 +51,9 @@ class BOQRow:
             "rate": self.rate,
             "amount": self.amount,
         }
+        if self.groups:
+            d["groups"] = self.groups
+        return d
 
 
 # ─────────────────────────────────────────────────────────────────────────────
