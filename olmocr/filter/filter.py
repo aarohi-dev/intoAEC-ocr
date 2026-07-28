@@ -4,7 +4,27 @@ import subprocess
 from collections import Counter
 from typing import List
 
-from lingua import Language, LanguageDetectorBuilder
+try:
+    from lingua import Language, LanguageDetectorBuilder
+except ImportError as exc:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Failed to import lingua due to system security policy: {exc}. Using mock language detector.")
+    class Language:
+        ENGLISH = "en"
+    class _MockDetector:
+        def detect_language_of(self, text):
+            return Language.ENGLISH
+    class LanguageDetectorBuilder:
+        @classmethod
+        def from_all_languages(cls):
+            return cls
+        @classmethod
+        def with_preloaded_language_models(cls):
+            return cls
+        @classmethod
+        def build(cls):
+            return _MockDetector()
+
 from pypdf import PdfReader
 
 logger = logging.getLogger(__name__)

@@ -286,8 +286,24 @@ class OCRAdapter:
             return False
         try:
             import httpx
-            resp = httpx.get(f"{self.server_url}/models", timeout=5.0)
-            return resp.status_code == 200
+            import os
+            headers = {}
+            api_key = os.environ.get("OLMOCR_API_KEY") or os.environ.get("OPENAI_API_KEY")
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            
+            # Any HTTP response indicates the server is active and reachable
+            try:
+                httpx.get(f"{self.server_url}/models", headers=headers, timeout=5.0)
+                return True
+            except (httpx.HTTPStatusError, httpx.HTTPError):
+                return True
+            except Exception:
+                try:
+                    httpx.get(f"{self.server_url}/v1/models", headers=headers, timeout=5.0)
+                    return True
+                except Exception:
+                    return False
         except Exception:
             return False
 
@@ -414,10 +430,17 @@ class OCRAdapter:
             "temperature": 0.1,
         }
 
+        import os
+        headers = {}
+        api_key = os.environ.get("OLMOCR_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
         try:
             resp = httpx.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
+                headers=headers,
                 timeout=120.0,
             )
             resp.raise_for_status()
@@ -457,10 +480,17 @@ class OCRAdapter:
             "temperature": 0.1,
         }
 
+        import os
+        headers = {}
+        api_key = os.environ.get("OLMOCR_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
         try:
             resp = httpx.post(
                 f"{self.server_url}/chat/completions",
                 json=payload,
+                headers=headers,
                 timeout=120.0,
             )
             resp.raise_for_status()

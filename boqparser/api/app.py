@@ -154,32 +154,84 @@ async def extract(
     fallback: bool = Form(False),
     tolerance: float = Form(0.02),
     dpi: int = Form(300),
+    async_mode: bool = Form(False),
 ):
     """
-    Start PDF parsing as a background task. Returns task_id.
+    Parse a PDF. If async_mode is True, runs as a background task returning a task_id.
+    Otherwise, runs synchronously and returns the full ParseResult JSON.
     """
-    import uuid
     pdf_path = await _save_upload(file)
-    task_id = str(uuid.uuid4())
     
-    from boqparser.api.task_manager import TaskManager
-    tm = TaskManager()
-    tm.create_task(task_id, pdf_path)
+    if async_mode:
+        import uuid
+        task_id = str(uuid.uuid4())
+        from boqparser.api.task_manager import TaskManager
+        tm = TaskManager()
+        tm.create_task(task_id, pdf_path)
+        background_tasks.add_task(
+            _run_extraction_task,
+            task_id=task_id,
+            pdf_path=pdf_path,
+            fallback=fallback,
+            tolerance=tolerance,
+            dpi=dpi,
+            server_url=server_url
+        )
+        return JSONResponse(
+            status_code=202,
+            content={"task_id": task_id, "status": "processing", "progress": 0}
+        )
     
-    background_tasks.add_task(
-        _run_extraction_task,
-        task_id=task_id,
-        pdf_path=pdf_path,
-        fallback=fallback,
-        tolerance=tolerance,
-        dpi=dpi,
-        server_url=server_url
-    )
-    
-    return JSONResponse(
-        status_code=202,
-        content={"task_id": task_id, "status": "processing", "progress": 0}
-    )
+    # Synchronous path
+    try:
+        from boqparser.api.task_manager import TaskManager
+        tm = TaskManager()
+        pdf_hash = tm.get_pdf_hash(pdf_path)
+        
+        parser = BOQParser(
+            server_url=server_url or os.environ.get("OLMOCR_SERVER_URL", "http://localhost:8000/v1"),
+            fallback_mode=fallback,
+            dpi=dpi,
+            tolerance=tolerance,
+            task_manager=tm,
+            pdf_hash=pdf_hash,
+        )
+        
+        result = await parser.parse_async(pdf_path)
+        result_dict = result.to_dict()
+        
+        # Inject Pricing RAG recommendations
+        try:
+            from boqparser.domain.pricing_rag import PricingRAG
+            rag = PricingRAG()
+            
+            all_items = result_dict.get("all_items", [])
+            for item in all_items:
+                desc = item.get("description", "")
+                if desc:
+                    item["suggested_rates"] = rag.recommend_rates(desc)
+                    
+            def inject_sections_rag(sections):
+                for s in sections:
+                    for item in s.get("items", []):
+                        desc = item.get("description", "")
+                        if desc:
+                            item["suggested_rates"] = rag.recommend_rates(desc)
+                    if s.get("children"):
+                        inject_sections_rag(s["children"])
+            inject_sections_rag(result_dict.get("sections", []))
+        except Exception as rag_exc:
+            logger.warning(f"Failed to inject RAG suggestions: {rag_exc}")
+            
+        return JSONResponse(content=result_dict)
+    except Exception as exc:
+        logger.exception(f"/extract failed: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        try:
+            os.unlink(pdf_path)
+        except Exception:
+            pass
 
 
 @app.get("/tasks/{task_id}")
@@ -765,13 +817,13 @@ def generate_html_report_from_pdf(pdf_path: str) -> str:
     in_grp = False
 
     def close_g():
-        global in_grp
+        nonlocal in_grp
         if in_grp:
             out.append("        </tbody></table></div>\n    </div>")
             in_grp = False
 
     def close_w():
-        global in_wi
+        nonlocal in_wi
         close_g()
         if in_wi:
             out.append("  </div>\n</div>")

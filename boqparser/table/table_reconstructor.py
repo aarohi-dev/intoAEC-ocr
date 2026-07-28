@@ -394,6 +394,9 @@ def _tokens_to_column_rows(
     x_centers = [(t.bbox[0] + t.bbox[2]) / 2.0 for t in tokens]
     col_centers = _cluster_x_centers(x_centers, n_cols)
 
+    if not col_centers:
+        return _tokens_to_lines(tokens, page_num)
+
     def nearest_col(xc: float) -> int:
         return int(np.argmin([abs(xc - cc) for cc in col_centers]))
 
