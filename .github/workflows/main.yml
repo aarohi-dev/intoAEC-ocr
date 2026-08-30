@@ -248,7 +248,7 @@ jobs:
 
       - name: Extract metadata for base image
         id: meta-base
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -272,7 +272,7 @@ jobs:
 
       - name: Extract metadata for image with model
         id: meta-with-model
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
