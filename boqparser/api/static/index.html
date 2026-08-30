@@ -837,8 +837,6 @@
                 txt.textContent = `Online (${data.ocr_mode})`;
                 if (data.olmocr_server_reachable) {
                     document.getElementById('server-url').value = data.olmocr_server;
-                } else {
-                    document.getElementById('fallback-mode').checked = true;
                 }
             } catch (err) {
                 dot.className = 'status-dot';

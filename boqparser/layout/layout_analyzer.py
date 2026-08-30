@@ -3,7 +3,7 @@ Layout Analyzer — detects page regions (title, header, footer, section heading
 table regions, page numbers) from OCR tokens using y-coordinate band clustering
 and content heuristics.
 
-Works with both VLM-mode tokens (bbox=[0,0,0,0]) and pypdfium2 tokens (with coords).
+Works with model tokens and PyMuPDF/Ollama tokens (bbox=[0,0,0,0]).
 When coordinates are absent, falls back to line-order heuristics.
 """
 
@@ -56,7 +56,7 @@ class LayoutResult:
     reading_order: List[int]          # indices into `regions` in reading order
     page_width: float = 0.0
     page_height: float = 0.0
-    has_coordinates: bool = False     # True if bbox data is real (pypdfium2 path)
+    has_coordinates: bool = False     # True if bbox data is real
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -132,8 +132,8 @@ class LayoutAnalyzer:
     """
     Analyzes page layout from OCR tokens.
 
-    When coordinate data is available (pypdfium2 fallback mode), uses y-band
-    clustering and x-range analysis.  When coordinates are absent (VLM mode
+    When coordinate data is available, uses y-band
+    clustering and x-range analysis.  When coordinates are absent (model mode
     with no per-char positions), falls back to line-order heuristics (top N%
     lines = header, bottom N% = footer, etc.).
     """

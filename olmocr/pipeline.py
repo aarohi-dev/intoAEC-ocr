@@ -37,6 +37,7 @@ from olmocr.data.renderpdf import render_pdf_to_base64png
 from olmocr.filter.filter import Language, PdfFilter
 from olmocr.image_utils import convert_image_to_pdf_bytes, is_jpeg, is_png
 from olmocr.metrics import MetricsKeeper, WorkerTracker
+from olmocr.ollama_fallback import OllamaClient, OllamaConfig, extract_page_with_ollama, iter_page_text
 from olmocr.prompts import PageResponse, build_no_anchoring_v4_yaml_prompt
 from olmocr.prompts.anchor import get_anchor_text
 from olmocr.s3_utils import (
@@ -80,6 +81,8 @@ tracker = WorkerTracker()
 
 # Global variable for vLLM queue status (updated by vllm_server_task)
 vllm_queued_requests = None
+ollama_client = None
+ollama_verify_lock = asyncio.Lock()
 
 # Temperature values for retry attempts - higher temperature helps overcome repetition issues
 TEMPERATURE_BY_ATTEMPT = [0.1, 0.1, 0.2, 0.3, 0.5, 0.8, 0.9, 1.0]
@@ -250,6 +253,46 @@ def make_fallback_result(pdf_orig_path: str, pdf_local_path: str, page_num: int)
     )
 
 
+async def make_ollama_fallback_result(args, pdf_orig_path: str, pdf_local_path: str, page_num: int) -> PageResult:
+    """Use incremental PyMuPDF extraction and Ollama while retaining PageResult."""
+    global ollama_client
+    if ollama_client is None:
+        ollama_client = OllamaClient(
+            OllamaConfig(
+                base_url=getattr(args, "ollama_url", "http://localhost:11434"),
+                model=getattr(args, "ollama_model", "llama3.2:latest"),
+                chunk_size=getattr(args, "ollama_chunk_size", 12000),
+            )
+        )
+
+    async with ollama_verify_lock:
+        await ollama_client.verify()
+
+    response, input_chars, output_chars = await extract_page_with_ollama(pdf_local_path, page_num, ollama_client)
+    logger.info(f"Ollama fallback completed for {pdf_orig_path}-{page_num} ({input_chars} input chars, {output_chars} output chars)")
+    return PageResult(pdf_orig_path, page_num, response, 0, 0, True, True)
+
+
+async def make_configured_fallback_result(args, pdf_orig_path: str, pdf_local_path: str, page_num: int) -> PageResult:
+    """Run Ollama fallback, then retain direct text extraction as a final safety net."""
+    if not getattr(args, "enable_ollama_fallback", False):
+        return make_fallback_result(pdf_orig_path, pdf_local_path, page_num)
+
+    try:
+        return await make_ollama_fallback_result(args, pdf_orig_path, pdf_local_path, page_num)
+    except Exception as exc:
+        logger.error(
+            f"Ollama fallback failed for {pdf_orig_path}-{page_num}: {type(exc).__name__}: {exc}. "
+            "Using direct PyMuPDF text as the final fallback."
+        )
+        try:
+            page_text = next(iter_page_text(pdf_local_path, page_num)).strip() or None
+        except Exception as extraction_exc:
+            logger.error(f"PyMuPDF fallback failed for {pdf_orig_path}-{page_num}: {type(extraction_exc).__name__}: {extraction_exc}")
+            page_text = None
+        return PageResult(pdf_orig_path, page_num, PageResponse(None, True, 0, False, False, page_text), 0, 0, True, True)
+
+
 async def try_single_page_with_backoff(
     args,
     pdf_orig_path: str,
@@ -274,6 +317,9 @@ async def try_single_page_with_backoff(
             )
             await asyncio.sleep(sleep_delay)
 
+    if getattr(args, "enable_ollama_fallback", False):
+        logger.error(f"Primary OCR connection failed after backoff for {pdf_orig_path}-{page_num}; allowing fallback")
+        return None
     logger.error(f"Max backoff attempts reached for {pdf_orig_path}-{page_num}, terminating job")
     sys.exit(1)
 
@@ -291,6 +337,12 @@ async def process_page(args, worker_id: int, pdf_orig_path: str, pdf_local_path:
     cumulative_rotation = 0
 
     await tracker.track_work(worker_id, f"{pdf_orig_path}-{page_num}", "started")
+
+    if getattr(args, "primary_unavailable", False):
+        logger.error(f"Primary OCR failed; switching to PyMuPDF + Ollama fallback for {pdf_orig_path}-{page_num}")
+        metrics.add_metrics(failed_pages=1)
+        await tracker.track_work(worker_id, f"{pdf_orig_path}-{page_num}", "errored")
+        return await make_configured_fallback_result(args, pdf_orig_path, pdf_local_path, page_num)
 
     # === First attempt ===
     result = await try_single_page_with_backoff(args, pdf_orig_path, pdf_local_path, page_num, attempt=0, rotation=cumulative_rotation)
@@ -329,7 +381,8 @@ async def process_page(args, worker_id: int, pdf_orig_path: str, pdf_local_path:
         logger.error(f"Failed {pdf_orig_path}-{page_num} after {MAX_RETRIES} rotation retries")
         metrics.add_metrics(failed_pages=1)
         await tracker.track_work(worker_id, f"{pdf_orig_path}-{page_num}", "errored")
-        return make_fallback_result(pdf_orig_path, pdf_local_path, page_num)
+        logger.error(f"Primary OCR failed; switching to PyMuPDF + Ollama fallback for {pdf_orig_path}-{page_num}")
+        return await make_configured_fallback_result(args, pdf_orig_path, pdf_local_path, page_num)
 
     # === Non-rotation error path: sequential, but switch to parallel if queue empties ===
     for i, attempt in enumerate(retry_attempts):
@@ -372,7 +425,8 @@ async def process_page(args, worker_id: int, pdf_orig_path: str, pdf_local_path:
     logger.error(f"Failed {pdf_orig_path}-{page_num} after {MAX_RETRIES} attempts")
     metrics.add_metrics(failed_pages=1)
     await tracker.track_work(worker_id, f"{pdf_orig_path}-{page_num}", "errored")
-    return make_fallback_result(pdf_orig_path, pdf_local_path, page_num)
+    logger.error(f"Primary OCR failed; switching to PyMuPDF + Ollama fallback for {pdf_orig_path}-{page_num}")
+    return await make_configured_fallback_result(args, pdf_orig_path, pdf_local_path, page_num)
 
 
 # Manual simple implementation of HTTP Post
@@ -1229,6 +1283,10 @@ async def main():
     parser.add_argument("--target_longest_image_dim", type=int, help="Dimension on longest side to use for rendering the pdf pages", default=1288)
     parser.add_argument("--target_anchor_text_len", type=int, help="Maximum amount of anchor text to use (characters), not used for new models", default=-1)
     parser.add_argument("--guided_decoding", action="store_true", help="Enable guided decoding for model YAML type outputs")
+    parser.add_argument("--enable_ollama_fallback", action="store_true", help="Use PyMuPDF text plus local Ollama after primary OCR retries fail")
+    parser.add_argument("--ollama_url", default="http://localhost:11434", help="Ollama API URL for fallback processing")
+    parser.add_argument("--ollama_model", default="llama3.2:latest", help="Ollama model for fallback processing")
+    parser.add_argument("--ollama_chunk_size", type=int, default=12000, help="Maximum characters sent per fallback chunk")
     parser.add_argument(
         "--disk_logging",
         type=str,
@@ -1421,17 +1479,25 @@ async def main():
 
     # If you get this far, then you are doing inference and need a GPU
     # check_sglang_version()
-    if use_internal_server:
+    if use_internal_server and not args.enable_ollama_fallback:
         check_torch_gpu_available()
 
     logger.info(f"Starting pipeline with PID {os.getpid()}")
 
     # Download the model before you do anything else
     if use_internal_server:
-        model_name_or_path = await download_model(args.model)
-        args.server = f"http://localhost:{args.port}/v1"
-        args.model = "olmocr"  # Internal server always uses this name for the model, for supporting weird local model paths
-        logger.info(f"Using internal server at {args.server}")
+        try:
+            model_name_or_path = await download_model(args.model)
+            args.server = f"http://localhost:{args.port}/v1"
+            args.model = "olmocr"  # Internal server always uses this name for the model, for supporting weird local model paths
+            logger.info(f"Using internal server at {args.server}")
+        except Exception as exc:
+            if not args.enable_ollama_fallback:
+                raise
+            logger.error(f"Primary OCR failed to initialize: {type(exc).__name__}: {exc}")
+            args.primary_unavailable = True
+            args.server = f"http://localhost:{args.port}/v1"
+            model_name_or_path = None
     else:
         logger.info(f"Using external server at {args.server}")
         model_name_or_path = None
@@ -1444,11 +1510,18 @@ async def main():
         return
 
     # Start local vLLM instance if not using external one
-    vllm_server = None
-    if use_internal_server:
+    vllm_server: asyncio.Task | None = None
+    if use_internal_server and not getattr(args, "primary_unavailable", False):
         vllm_server = asyncio.create_task(vllm_server_host(model_name_or_path, args, unknown_args))
 
-    await vllm_server_ready(args)
+    if not getattr(args, "primary_unavailable", False):
+        try:
+            await vllm_server_ready(args)
+        except Exception as exc:
+            if not args.enable_ollama_fallback:
+                raise
+            logger.error(f"Primary OCR failed to become ready: {type(exc).__name__}: {exc}")
+            args.primary_unavailable = True
 
     metrics_task = asyncio.create_task(metrics_reporter(work_queue))
 

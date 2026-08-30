@@ -3,7 +3,7 @@ Table Reconstructor — converts OCR tokens or VLM HTML table output into
 structured BOQRow records.
 
 Two reconstruction paths:
-  1. HTML path  — when olmocr model returns <table> HTML (is_table=True, VLM mode)
+    1. HTML path  — when the model returns <table> HTML (is_table=True)
                   Parse with html.parser / lxml.
   2. Text path  — when tokens are plain text with or without coordinates.
                   Uses x-coordinate k-means clustering to find columns,
@@ -289,7 +289,7 @@ def _parse_html_table(html: str, page_num: int) -> List[BOQRow]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# X-coordinate clustering (for plain text / pypdfium2 tokens)
+# X-coordinate clustering (for plain text tokens)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _cluster_x_centers(x_centers: List[float], n_cols: int) -> List[float]:

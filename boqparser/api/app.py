@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse, HTMLResponse
 
 from boqparser.parser import BOQParser
+from boqparser.extraction_service import ExtractionError
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +78,24 @@ async def serve_ui():
 
 @app.get("/health")
 async def health():
-    """Health check — tests olmocr server connectivity."""
-    parser = _get_parser()
-    server_ok = parser.ocr_adapter.check_server()
+    """Health check for the primary Ollama service and olmOCR fallback endpoint."""
+    from boqparser.extraction_service import OllamaBOQExtractor
+
+    ollama = OllamaBOQExtractor()
+    try:
+        await ollama.verify()
+        ollama_ok = True
+    except Exception:
+        ollama_ok = False
+    finally:
+        await ollama.close()
+    olmocr_ok = _get_parser().ocr_adapter.check_server()
     return {
         "status": "ok",
-        "olmocr_server": parser.ocr_adapter.server_url,
-        "olmocr_server_reachable": server_ok,
-        "ocr_mode": "vlm" if server_ok else "fallback (pypdfium2)",
+        "olmocr_server": _get_parser().ocr_adapter.server_url,
+        "olmocr_server_reachable": olmocr_ok,
+        "ollama_reachable": ollama_ok,
+        "ocr_mode": "ollama" if ollama_ok else "olmocr fallback",
         "version": "1.0.0",
     }
 
@@ -224,6 +235,9 @@ async def extract(
             logger.warning(f"Failed to inject RAG suggestions: {rag_exc}")
             
         return JSONResponse(content=result_dict)
+    except ExtractionError as exc:
+        logger.error(f"/extract unavailable: {exc}")
+        raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         logger.exception(f"/extract failed: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -419,7 +433,9 @@ async def extract_html(
     """Parse PDF and return dynamic beautiful HTML report."""
     pdf_path = await _save_upload(file)
     try:
-        html_content = generate_html_report_from_pdf(pdf_path)
+        parser = _get_parser()
+        result = await parser.parse_async(pdf_path)
+        html_content = generate_html_report_from_result(result)
         return HTMLResponse(content=html_content)
     except Exception as exc:
         logger.exception(f"/extract/html failed: {exc}")
@@ -429,6 +445,19 @@ async def extract_html(
             os.unlink(pdf_path)
         except Exception:
             pass
+
+
+def generate_html_report_from_result(result) -> str:
+    """Render the validated BOQ result without running a second parser."""
+    import html
+
+    rows = []
+    for section in result.sections:
+        rows.append(f"<tr><th colspan='6'>{html.escape(section.number)} {html.escape(section.title)}</th></tr>")
+        for item in section.all_items():
+            values = (item.item_no, item.description, item.quantity, item.unit, item.rate, item.amount)
+            rows.append("<tr>" + "".join(f"<td>{html.escape(str(value)) if value is not None else ''}</td>" for value in values) + "</tr>")
+    return "<!doctype html><html><head><meta charset='utf-8'><title>BOQ Report</title><style>body{font-family:system-ui;margin:2rem;color:#172033}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd3df;padding:.5rem;text-align:left}th{background:#e9eef5}</style></head><body><h1>BOQ Report</h1><p>Project: %s</p><p>Type: %s</p><table><thead><tr><th>Item</th><th>Description</th><th>Quantity</th><th>Unit</th><th>Rate</th><th>Amount</th></tr></thead><tbody>%s</tbody></table></body></html>" % (html.escape(result.project_name), html.escape(result.report_type), "".join(rows))
 
 
 def generate_html_report_from_pdf(pdf_path: str) -> str:
@@ -927,4 +956,4 @@ def create_app() -> FastAPI:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
+    uvicorn.run(app, host="127.0.0.1", port=8080, log_level="info")

@@ -3,7 +3,7 @@ BOQParser — Main orchestration pipeline.
 
 Coordinates all modules:
   1. PDFProcessor   — render pages at 300 DPI
-  2. OCRAdapter     — extract text (VLM or pypdfium2 fallback)
+    2. OCRAdapter     — extract structured text (Ollama primary or olmOCR fallback)
   3. LayoutAnalyzer — classify page regions
   4. TableReconstructor — build BOQRows
   5. DomainCorrector — clean construction terminology
@@ -152,13 +152,13 @@ class BOQParser:
     """
     Production-grade BOQ PDF parser.
 
-    Wraps the olmocr VLM engine (or pypdfium2 fallback) to extract structured
+    Uses PyMuPDF and Ollama Llama 3.2, with olmOCR as the extraction fallback,
     data from construction BOQ PDFs.
 
     Args:
         server_url:       olmocr vLLM server URL. Default: http://localhost:8000/v1
         model_name:       Model name registered in the vLLM server.
-        fallback_mode:    If True, always use pypdfium2 (no VLM).
+        fallback_mode:    If True, use only olmOCR.
         dpi:              Rendering DPI (minimum 300).
         n_cols:           Expected number of columns in BOQ tables.
         tolerance:        Allowed relative error for amount validation.
@@ -202,39 +202,6 @@ class BOQParser:
         pdf_path = str(Path(pdf_path).resolve())
         logger.info(f"BOQParser.parse(): {pdf_path}")
 
-        # Auto-detect Rate Analysis
-        from boqparser.parser_rate_analysis import RateAnalysisParser
-        if RateAnalysisParser.detect(pdf_path):
-            logger.info("Rate Analysis format detected. Using RateAnalysisParser.")
-            ra_parser = RateAnalysisParser(tolerance=self.validator.tolerance)
-            sections, all_rows = ra_parser.parse(pdf_path)
-            
-            validation = self.validator.validate_all(all_rows, sections)
-            all_text = " ".join(row.description for row in all_rows)
-            project_name = _extract_project_name(all_text, pdf_path)
-            
-            metadata = {
-                "total_pages": self.pdf_processor.get_page_count(pdf_path),
-                "pdf_type": self.pdf_processor.detect_pdf_type(pdf_path),
-                "ocr_mode": "local_fitz_rate_analysis",
-                "total_items": len(all_rows),
-                "sections_found": len(sections),
-                "validation_issues": validation.invalid_rows,
-            }
-            
-            return ParseResult(
-                source_file=pdf_path,
-                project_name=project_name,
-                report_type="Rate Analysis Report",
-                pdf_type=metadata["pdf_type"],
-                ocr_mode="local_fitz_rate_analysis",
-                total_pages=metadata["total_pages"],
-                sections=sections,
-                all_rows=all_rows,
-                validation_summary=validation,
-                metadata=metadata,
-            )
-
         # ── Step 1: PDF info ──────────────────────────────────────────────────
         total_pages = self.pdf_processor.get_page_count(pdf_path)
         pdf_type    = self.pdf_processor.detect_pdf_type(pdf_path)
@@ -245,7 +212,7 @@ class BOQParser:
 
         # ── Step 2: OCR all pages ─────────────────────────────────────────────
         ocr_results: List[PageOCRResult] = self.ocr_adapter.extract_all(pdf_path, total_pages, self.pdf_hash, self.task_manager)
-        ocr_mode = "vlm" if any(r.ocr_mode == "vlm" for r in ocr_results) else "fallback"
+        ocr_mode = "ollama" if any(r.ocr_mode == "ollama" for r in ocr_results) else "olmocr"
 
         # ── Step 3: Layout analysis ───────────────────────────────────────────
         layout_results: List[LayoutResult] = self.layout_analyzer.analyze_all(ocr_results, dim_tuples)
@@ -302,40 +269,6 @@ class BOQParser:
         pdf_path = str(Path(pdf_path).resolve())
         logger.info(f"BOQParser.parse_async(): {pdf_path}")
 
-        # Auto-detect Rate Analysis
-        from boqparser.parser_rate_analysis import RateAnalysisParser
-        if RateAnalysisParser.detect(pdf_path):
-            logger.info("Rate Analysis format detected (async path). Using RateAnalysisParser.")
-            loop = asyncio.get_event_loop()
-            ra_parser = RateAnalysisParser(tolerance=self.validator.tolerance)
-            sections, all_rows = await loop.run_in_executor(None, ra_parser.parse, pdf_path)
-            
-            validation = self.validator.validate_all(all_rows, sections)
-            all_text = " ".join(row.description for row in all_rows)
-            project_name = _extract_project_name(all_text, pdf_path)
-            
-            metadata = {
-                "total_pages": self.pdf_processor.get_page_count(pdf_path),
-                "pdf_type": self.pdf_processor.detect_pdf_type(pdf_path),
-                "ocr_mode": "local_fitz_rate_analysis",
-                "total_items": len(all_rows),
-                "sections_found": len(sections),
-                "validation_issues": validation.invalid_rows,
-            }
-            
-            return ParseResult(
-                source_file=pdf_path,
-                project_name=project_name,
-                report_type="Rate Analysis Report",
-                pdf_type=metadata["pdf_type"],
-                ocr_mode="local_fitz_rate_analysis",
-                total_pages=metadata["total_pages"],
-                sections=sections,
-                all_rows=all_rows,
-                validation_summary=validation,
-                metadata=metadata,
-            )
-
         total_pages = self.pdf_processor.get_page_count(pdf_path)
         pdf_type    = self.pdf_processor.detect_pdf_type(pdf_path)
         page_dims   = self.pdf_processor.get_page_dimensions(pdf_path)
@@ -343,7 +276,7 @@ class BOQParser:
 
         # Async OCR
         ocr_results = await self.ocr_adapter.extract_all_async(pdf_path, total_pages, self.pdf_hash, self.task_manager)
-        ocr_mode = "vlm" if any(r.ocr_mode == "vlm" for r in ocr_results) else "fallback"
+        ocr_mode = "ollama" if any(r.ocr_mode == "ollama" for r in ocr_results) else "olmocr"
 
         layout_results = self.layout_analyzer.analyze_all(ocr_results, dim_tuples)
         all_rows = self.table_reconstructor.reconstruct_all(ocr_results)

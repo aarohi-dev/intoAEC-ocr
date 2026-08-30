@@ -24,6 +24,7 @@ dependencies = [
   "smart_open",
   "pypdf>=5.2.0",
   "pypdfium2",
+    "PyMuPDF",
   "cryptography",
   "lingua-language-detector",
   "Pillow",

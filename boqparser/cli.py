@@ -35,7 +35,7 @@ logger = logging.getLogger("boqparser.cli")
 def cli():
     """BOQ Parser — Production-grade PDF parsing for construction documents.
 
-    Uses the olmocr VLM engine (or pypdfium2 fallback) to extract structured
+    Uses PyMuPDF and Ollama Llama 3.2 (or olmOCR fallback) to extract structured
     data from BOQ reports, estimation sheets, and material summaries.
     """
     pass
@@ -55,7 +55,7 @@ def cli():
 @click.option("--server-url", default="http://localhost:8000/v1", show_default=True,
               help="olmocr vLLM server URL.")
 @click.option("--fallback", is_flag=True, default=False,
-              help="Force pypdfium2 fallback (no VLM server required).")
+              help="Force olmOCR fallback mode.")
 @click.option("--dpi", default=300, show_default=True, type=int,
               help="PDF rendering DPI (minimum 300).")
 @click.option("--tolerance", default=0.02, show_default=True, type=float,
@@ -208,9 +208,9 @@ def batch(
 @click.option("--host", default="0.0.0.0", show_default=True)
 @click.option("--port", default=8080, show_default=True, type=int)
 @click.option("--server-url", default="http://localhost:8000/v1", show_default=True,
-              help="olmocr vLLM server URL (set via env OLMOCR_SERVER_URL too).")
+              help="olmOCR fallback server URL (set via env OLMOCR_SERVER_URL too).")
 @click.option("--fallback", is_flag=True, default=False,
-              help="Force pypdfium2 fallback mode (env: OLMOCR_FALLBACK=1).")
+              help="Force olmOCR fallback mode.")
 @click.option("--reload", is_flag=True, default=False,
               help="Auto-reload on code changes (development).")
 def serve(host: str, port: int, server_url: str, fallback: bool, reload: bool):
@@ -227,7 +227,7 @@ def serve(host: str, port: int, server_url: str, fallback: bool, reload: bool):
 
     click.echo(f"Starting BOQ Parser API server at http://{host}:{port}")
     click.echo(f"   olmocr server: {server_url}")
-    click.echo(f"   OCR mode: {'fallback (pypdfium2)' if fallback else 'VLM'}")
+    click.echo(f"   OCR mode: {'olmOCR fallback' if fallback else 'PyMuPDF + Ollama primary'}")
     click.echo(f"   Docs: http://{host}:{port}/docs")
 
     uvicorn.run(
@@ -256,7 +256,7 @@ def health(server_url: str, api_url: str):
 
     click.echo("olmocr vLLM Server:")
     click.echo(f"  URL:        {server_url}")
-    click.echo(f"  Reachable:  {'Yes' if ok else 'No (will use pypdfium2 fallback)'}")
+    click.echo(f"  Reachable:  {'Yes' if ok else 'No (used only as fallback)'}")
 
     # Check BOQ Parser API
     try:

@@ -2,7 +2,7 @@
 PDF Processor — converts PDF pages to images using pypdfium2.
 
 Features:
-- Scanned vs digital detection (checks if pdfium text layer has content)
+- Scanned vs digital detection (checks if the PDF text layer has content)
 - 300 DPI minimum rendering
 - PIL Image output per page
 - Mixed PDF support (some pages scanned, some digital)
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-import pypdfium2 as pdfium
+import fitz
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class PageImage:
 
 class PDFProcessor:
     """
-    Converts PDF pages to PIL Images using pypdfium2.
+    Converts PDF pages to PIL Images using PyMuPDF.
 
     Args:
         dpi: Rendering resolution. Minimum 300.
@@ -61,14 +61,13 @@ class PDFProcessor:
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def _scale_for_dpi(self, dpi: int) -> float:
-        """Convert DPI to pypdfium2 scale factor (scale 1.0 = 72 DPI)."""
+        """Convert DPI to PyMuPDF scale factor (scale 1.0 = 72 DPI)."""
         return dpi / self.POINTS_PER_INCH
 
-    def _is_page_scanned(self, page: pdfium.PdfPage) -> bool:
+    def _is_page_scanned(self, page) -> bool:
         """Return True if the page has fewer than min_text_chars of selectable text."""
         try:
-            textpage = page.get_textpage()
-            text = textpage.get_text_bounded()
+            text = page.get_text("text")
             return len(text.strip()) < self.min_text_chars
         except Exception:
             return True
@@ -77,8 +76,8 @@ class PDFProcessor:
 
     def get_page_count(self, pdf_path: str) -> int:
         """Return total number of pages in the PDF."""
-        doc = pdfium.PdfDocument(pdf_path)
-        count = len(doc)
+        doc = fitz.open(pdf_path)
+        count = doc.page_count
         doc.close()
         return count
 
@@ -93,16 +92,16 @@ class PDFProcessor:
         Returns:
             PageImage dataclass.
         """
-        doc = pdfium.PdfDocument(pdf_path)
+        doc = fitz.open(pdf_path)
         try:
-            page = doc[page_num - 1]
-            width_pts = page.get_width()
-            height_pts = page.get_height()
+            page = doc.load_page(page_num - 1)
+            width_pts = page.rect.width
+            height_pts = page.rect.height
             is_scanned = self._is_page_scanned(page)
 
             scale = self._scale_for_dpi(self.dpi)
-            bitmap = page.render(scale=scale, rotation=0)
-            pil_img = bitmap.to_pil().convert("RGB")
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+            pil_img = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
 
             return PageImage(
                 page_num=page_num,
@@ -132,8 +131,8 @@ class PDFProcessor:
         if not path.exists():
             raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
-        doc = pdfium.PdfDocument(str(path))
-        total = len(doc)
+        doc = fitz.open(str(path))
+        total = doc.page_count
         doc.close()
 
         page_numbers = pages if pages is not None else list(range(1, total + 1))
@@ -155,13 +154,13 @@ class PDFProcessor:
 
     def get_page_dimensions(self, pdf_path: str) -> List[dict]:
         """Return width/height in points for every page (no image rendering)."""
-        doc = pdfium.PdfDocument(pdf_path)
+        doc = fitz.open(pdf_path)
         dims = []
         for i, page in enumerate(doc):
             dims.append({
                 "page_num": i + 1,
-                "width_pts": page.get_width(),
-                "height_pts": page.get_height(),
+                "width_pts": page.rect.width,
+                "height_pts": page.rect.height,
             })
         doc.close()
         return dims
@@ -172,7 +171,7 @@ class PDFProcessor:
 
         Returns one of: 'digital', 'scanned', 'mixed'
         """
-        doc = pdfium.PdfDocument(pdf_path)
+        doc = fitz.open(pdf_path)
         scanned_count = 0
         total = len(doc)
 

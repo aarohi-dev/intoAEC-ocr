@@ -1,5 +1,6 @@
 # BOQ Parser additional dependencies
 # The olmocr package (and its deps like pypdfium2, pypdf, Pillow, httpx) must already be installed.
+PyMuPDF>=1.24.0
 
 # API
 fastapi>=0.111.0

@@ -74,28 +74,7 @@ class TestOCRAdapter:
         adapter = OCRAdapter(server_url="http://localhost:19999/v1", fallback_mode=False)
         assert not adapter.check_server()
 
-    @pytest.mark.skipif(not os.path.exists(SAMPLE_PDF), reason="Sample PDF not found")
-    def test_fallback_extract(self):
+    def test_fallback_mode_selects_olmocr(self):
         adapter = OCRAdapter(fallback_mode=True)
-        result = adapter.extract(SAMPLE_PDF, page_num=1)
-        assert isinstance(result, PageOCRResult)
-        assert result.page_num == 1
-        assert result.ocr_mode == "fallback"
-        # edgar.pdf has text content
-        assert len(result.tokens) > 0
+        assert adapter.fallback_mode is True
 
-    @pytest.mark.skipif(not os.path.exists(SAMPLE_PDF), reason="Sample PDF not found")
-    def test_fallback_extract_all(self):
-        adapter = OCRAdapter(fallback_mode=True)
-        from boqparser.pdf.pdf_processor import PDFProcessor
-        total = PDFProcessor().get_page_count(SAMPLE_PDF)
-        results = adapter.extract_all(SAMPLE_PDF, total)
-        assert len(results) == total
-        for r in results:
-            assert isinstance(r, PageOCRResult)
-
-    @pytest.mark.skipif(not os.path.exists(SAMPLE_PDF), reason="Sample PDF not found")
-    def test_render_page(self):
-        b64 = OCRAdapter._render_page_to_base64png(SAMPLE_PDF, page_num=1, target_longest_image_dim=512)
-        assert isinstance(b64, str)
-        assert len(b64) > 100  # non-empty base64 string

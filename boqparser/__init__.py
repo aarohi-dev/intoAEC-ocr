@@ -2,7 +2,7 @@
 BOQ Parser - Production-grade PDF parsing system for construction documents.
 
 Wraps the existing olmocr VLM OCR engine and adds:
-- PDF processing (pypdfium2)
+- PDF processing (PyMuPDF)
 - Layout analysis
 - Table reconstruction
 - Hierarchy detection
