@@ -22,4 +22,4 @@ lxml>=5.2.0
 PyYAML>=6.0
 
 # numpy for x-coordinate clustering
-numpy>=1.26.0
+numpy>=2.4.6
