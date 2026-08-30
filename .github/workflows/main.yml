@@ -259,7 +259,7 @@ jobs:
             latest=true
 
       - name: Build and push base Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -284,7 +284,7 @@ jobs:
             suffix=-with-model,onlatest=true
 
       - name: Build and push Docker image with model
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile.with-model
