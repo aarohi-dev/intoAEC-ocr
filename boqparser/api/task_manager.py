@@ -55,30 +55,30 @@ class TaskManager:
     @staticmethod
     def get_pdf_hash(pdf_path: str) -> str:
         """
-        Generate a unique, stable hash for a PDF file based on its name, size, and parts of its content.
+        Generate a stable hash for a PDF based purely on its size and content.
+
+        IMPORTANT: the filename is intentionally excluded.  Uploads arrive as
+        temp files with random names (e.g. tmp3a8f1b.pdf), so including the
+        name would produce a different hash for every upload of the same file,
+        breaking the page-level OCR cache entirely.
         """
         p = Path(pdf_path)
         if not p.exists():
             return hashlib.sha256(pdf_path.encode()).hexdigest()
-        
-        # Hash filename, file size, first 8KB and last 8KB of content
+
         hasher = hashlib.sha256()
-        hasher.update(p.name.encode())
+        # Size makes the hash cheaper: a different-size file can't collide.
         hasher.update(str(p.stat().st_size).encode())
-        
+
         try:
             with open(p, "rb") as f:
-                first_chunk = f.read(8192)
-                hasher.update(first_chunk)
-                
-                # Go near the end if the file is large enough
+                hasher.update(f.read(8192))          # first 8 KB
                 if p.stat().st_size > 16384:
                     f.seek(-8192, 2)
-                    last_chunk = f.read(8192)
-                    hasher.update(last_chunk)
+                    hasher.update(f.read(8192))      # last 8 KB
         except Exception:
             pass
-            
+
         return hasher.hexdigest()
 
     # ── Task management ──────────────────────────────────────────────────────

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 BOQ_RESPONSE_SCHEMA = {
     "type": "object",
-    "required": ["text", "is_table", "rows"],
+    "required": ["is_table", "rows"],
     "properties": {
         "text": {"type": "string"},
         "is_table": {"type": "boolean"},
@@ -55,10 +55,13 @@ class ExtractionError(RuntimeError):
 class OllamaSettings:
     base_url: str = "http://localhost:11434"
     model: str = "llama3.2"
-    timeout: float = 300.0
-    chunk_size: int = 6000
-    max_retries: int = 1
-    max_output_tokens: int = 2048
+    timeout: float = 360.0
+    # 1500 chars ≈ 20-30 BOQ rows → JSON output stays well under 4096 tokens.
+    chunk_size: int = 1500
+    max_retries: int = 2
+    # Enough for a 1500-char chunk's JSON output. Raise via OLLAMA_MAX_OUTPUT_TOKENS
+    # env var if you use a larger chunk_size.
+    max_output_tokens: int = 4096
     page_concurrency: int = 1
 
     @classmethod
@@ -80,6 +83,69 @@ def _strip_json_fences(value: str) -> str:
     value = value.strip()
     match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", value, flags=re.IGNORECASE | re.DOTALL)
     return match.group(1).strip() if match else value
+
+
+def _salvage_truncated_json(text: str, page_num: int) -> Optional[dict[str, Any]]:
+    """
+    Attempt to recover usable BOQ rows from a JSON response that was cut off
+    before the closing brace.  Walks the character stream tracking brace depth
+    so it can pinpoint the last fully-closed row object, then reconstructs a
+    syntactically valid JSON document from whatever arrived cleanly.
+
+    Returns a valid payload dict on success, or None if nothing can be saved.
+    """
+    rows_start = text.find('"rows"')
+    if rows_start == -1:
+        return None
+    array_open = text.find('[', rows_start)
+    if array_open == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape_next = False
+    last_complete_row_end = -1
+
+    for i, c in enumerate(text[array_open:], start=array_open):
+        if escape_next:
+            escape_next = False
+            continue
+        if c == '\\' and in_string:
+            escape_next = True
+            continue
+        if c == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                last_complete_row_end = i
+
+    if last_complete_row_end == -1:
+        return None
+
+    # Extract the text field from the partial response (may be absent).
+    text_val = ""
+    text_m = re.search(r'"text"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+    if text_m:
+        text_val = text_m.group(1)
+
+    rows_fragment = text[array_open : last_complete_row_end + 1] + "]"
+    candidate = f'{{"text":"{text_val}","is_table":true,"rows":{rows_fragment}}}'
+    try:
+        result = json.loads(candidate)
+        n_rows = len(result.get("rows", []))
+        logger.warning(
+            f"Page {page_num}: response was truncated — salvaged {n_rows} complete row(s). "
+            "If this happens often, reduce OLLAMA_CHUNK_SIZE further."
+        )
+        return result
+    except json.JSONDecodeError:
+        return None
 
 
 def _number(value: Any) -> Optional[float]:
@@ -213,7 +279,12 @@ class OllamaBOQExtractor:
                         "stream": False,
                         "format": BOQ_RESPONSE_SCHEMA,
                         "keep_alive": "10m",
-                        "options": {"temperature": 0, "num_predict": self.settings.max_output_tokens},
+                        # num_predict=-1 → Ollama stops at the natural EOS token.
+                        # With forced JSON schema mode the model knows exactly when
+                        # the object is closed, so it stops itself without needing
+                        # an artificial token cap.  A hard cap (e.g. 4096) cuts off
+                        # dense pages mid-JSON and causes parse failures.
+                        "options": {"temperature": 0, "num_predict": -1},
                     },
                 )
                 response.raise_for_status()
@@ -223,6 +294,14 @@ class OllamaBOQExtractor:
                     raise ExtractionError("Malformed Ollama response") from exc
                 if not isinstance(text, str) or not text.strip():
                     raise ExtractionError("Ollama returned an empty response")
+                # Warn if the response looks truncated, but let the caller decide
+                # whether to salvage or fail.  We no longer raise here because
+                # _salvage_truncated_json can often recover usable rows.
+                if not text.strip().endswith("}"):
+                    logger.warning(
+                        "Ollama response does not end with '}' — may be truncated. "
+                        "Attempting JSON salvage before deciding to fail."
+                    )
                 return text
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.HTTPStatusError) as exc:
                 last_error = exc
@@ -246,16 +325,27 @@ class OllamaBOQExtractor:
         outputs = []
         for chunk_index, chunk in enumerate(chunks, start=1):
             prompt = (
-            "Convert this BOQ page chunk into JSON only. Do not use Markdown or explanation. "
+                "Convert this BOQ page chunk into JSON only. Do not use Markdown or explanation. "
                 "Preserve item order and source values; never invent missing values. Use null for unknown numeric values. "
-            "This is chunk " + str(chunk_index) + " of " + str(len(chunks)) + " for one page. "
-            "A row split across chunks must be included only when its fields are complete; preserve the source text in text. "
-                'Schema: {"text":"string", "is_table":true, "rows":[{"item_no":"string","description":"string","quantity":number|null,"unit":"string","rate":number|null,"amount":number|null}]}\n'
-                f"Page number: {page_num}\nSource text:\n{chunk}"
+                "This is chunk " + str(chunk_index) + " of " + str(len(chunks)) + " for page " + str(page_num) + ". "
+                'Schema: {"is_table":true, "rows":[{"item_no":"string","description":"string","quantity":number|null,"unit":"string","rate":number|null,"amount":number|null}]}\n'
+                f"Source text:\n{chunk}"
             )
-            outputs.append(_validate_page_payload(json.loads(_strip_json_fences(await self._generate(prompt))), page_num))
+            raw = _strip_json_fences(await self._generate(prompt))
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                # Primary parse failed — attempt to salvage complete rows
+                payload = _salvage_truncated_json(raw, page_num)
+                if payload is None:
+                    raise ExtractionError(
+                        f"Page {page_num} chunk {chunk_index}: Ollama returned unparseable JSON "
+                        "and salvage found no complete rows. "
+                        "Try reducing OLLAMA_CHUNK_SIZE in .env."
+                    )
+            outputs.append(_validate_page_payload(payload, page_num))
         rows = [row for output in outputs for row in output["rows"]]
-        text = "\n".join(output["text"] for output in outputs if output["text"])
+        text = "\n".join(output["text"] for output in outputs if output.get("text")) or page_text.strip()
         if not rows:
             raise ExtractionError(f"Llama returned no structured BOQ rows for page {page_num}")
         return _payload_to_page_result({"rows": rows, "text": text, "is_table": bool(rows)}, page_num)

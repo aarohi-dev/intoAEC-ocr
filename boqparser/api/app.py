@@ -23,6 +23,15 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTa
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse, HTMLResponse
 
+# Auto-load .env file if present
+env_path = Path(".env")
+if env_path.exists():
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
 from boqparser.parser import BOQParser
 from boqparser.extraction_service import ExtractionError
 
@@ -146,6 +155,12 @@ async def _run_extraction_task(task_id: str, pdf_path: str, fallback: bool, tole
         except Exception as rag_exc:
             logger.warning(f"Failed to inject RAG suggestions: {rag_exc}")
             
+        try:
+            result_dict["html_report"] = generate_html_report_from_result(result)
+        except Exception as html_exc:
+            logger.warning(f"Failed to generate HTML report: {html_exc}")
+            result_dict["html_report"] = ""
+            
         tm.complete_task(task_id, result_dict)
         
         try:
@@ -233,6 +248,12 @@ async def extract(
             inject_sections_rag(result_dict.get("sections", []))
         except Exception as rag_exc:
             logger.warning(f"Failed to inject RAG suggestions: {rag_exc}")
+            
+        try:
+            result_dict["html_report"] = generate_html_report_from_result(result)
+        except Exception as html_exc:
+            logger.warning(f"Failed to generate HTML report: {html_exc}")
+            result_dict["html_report"] = ""
             
         return JSONResponse(content=result_dict)
     except ExtractionError as exc:
@@ -457,7 +478,45 @@ def generate_html_report_from_result(result) -> str:
         for item in section.all_items():
             values = (item.item_no, item.description, item.quantity, item.unit, item.rate, item.amount)
             rows.append("<tr>" + "".join(f"<td>{html.escape(str(value)) if value is not None else ''}</td>" for value in values) + "</tr>")
-    return "<!doctype html><html><head><meta charset='utf-8'><title>BOQ Report</title><style>body{font-family:system-ui;margin:2rem;color:#172033}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd3df;padding:.5rem;text-align:left}th{background:#e9eef5}</style></head><body><h1>BOQ Report</h1><p>Project: %s</p><p>Type: %s</p><table><thead><tr><th>Item</th><th>Description</th><th>Quantity</th><th>Unit</th><th>Rate</th><th>Amount</th></tr></thead><tbody>%s</tbody></table></body></html>" % (html.escape(result.project_name), html.escape(result.report_type), "".join(rows))
+    
+    project_name = html.escape(str(result.project_name))
+    report_type = html.escape(str(result.report_type))
+    tbody_content = "".join(rows)
+
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <title>BOQ Report - {project_name}</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem; color: #172033; }}
+    table {{ border-collapse: collapse; width: 100%; }}
+    th, td {{ border: 1px solid #ccd3df; padding: 0.5rem; text-align: left; }}
+    th {{ background: #e9eef5; }}
+  </style>
+</head>
+<body>
+  <h1>BOQ Report</h1>
+  <p><strong>Project:</strong> {project_name}</p>
+  <p><strong>Type:</strong> {report_type}</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Description</th>
+        <th>Quantity</th>
+        <th>Unit</th>
+        <th>Rate</th>
+        <th>Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {tbody_content}
+    </tbody>
+  </table>
+</body>
+</html>"""
+
 
 
 def generate_html_report_from_pdf(pdf_path: str) -> str:

@@ -921,16 +921,9 @@
 
                 currentParseResult = await response.json();
 
-                // Fetch HTML report
-                const htmlResponse = await fetch('/extract/html', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (htmlResponse.ok) {
-                    const htmlText = await htmlResponse.text();
+                if (currentParseResult.html_report) {
                     const frame = document.getElementById('html-report-frame');
-                    frame.srcdoc = htmlText;
+                    frame.srcdoc = currentParseResult.html_report;
                 }
 
                 displayResults(currentParseResult);
@@ -1216,6 +1209,13 @@
                     return;
                 }
                 newWindow.document.write('<h3>Generating HTML report, please wait...</h3>');
+                
+                if (currentParseResult && currentParseResult.html_report) {
+                    newWindow.document.open();
+                    newWindow.document.write(currentParseResult.html_report);
+                    newWindow.document.close();
+                    return;
+                }
                 
                 const response = await fetch(`/extract/html`, {
                     method: 'POST',

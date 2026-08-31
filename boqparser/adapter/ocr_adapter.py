@@ -133,7 +133,7 @@ class OCRAdapter:
         return asyncio.run(self.extract_all_async(pdf_path, total_pages, pdf_hash, task_manager))
 
     async def extract_all_async(self, pdf_path: str, total_pages: int, pdf_hash: Optional[str] = None, task_manager: Optional[Any] = None) -> List[PageOCRResult]:
-        from boqparser.extraction_service import OllamaBOQExtractor, OlmOCRFallbackExtractor
+        from boqparser.extraction_service import OllamaBOQExtractor, OlmOCRFallbackExtractor, ExtractionError
 
         if self.fallback_mode:
             logger.info("Primary BOQ extraction disabled; using olmOCR fallback")
@@ -146,12 +146,78 @@ class OCRAdapter:
         primary = OllamaBOQExtractor()
         try:
             logger.info("Starting BOQ extraction using PyMuPDF + Ollama Llama 3.2")
-            results = await primary.extract_all(pdf_path, total_pages)
-            logger.info("BOQ JSON validation successful for all pages")
-            return results
-        except Exception as primary_error:
-            from boqparser.extraction_service import ExtractionError
 
+            # ── Page-level cache: skip pages that were already extracted ──────
+            # The SQLite cache (boq_tasks_and_cache.db) stores results keyed by
+            # (pdf_hash, page_num). For a 100-page PDF this is critical — failed
+            # or resumed runs reuse already-completed pages instantly.
+            cached: dict[int, PageOCRResult] = {}
+            pages_needed: list[int] = []
+
+            if pdf_hash and task_manager:
+                for page_num in range(1, total_pages + 1):
+                    hit = task_manager.get_cached_page(pdf_hash, page_num)
+                    if hit:
+                        cached[page_num] = dict_to_page_ocr_result(hit)
+                    else:
+                        pages_needed.append(page_num)
+                if cached:
+                    logger.info(
+                        f"Page cache: {len(cached)}/{total_pages} pages already done, "
+                        f"{len(pages_needed)} page(s) still need extraction"
+                    )
+            else:
+                pages_needed = list(range(1, total_pages + 1))
+
+            # ── Verify Ollama only if we actually need to call it ─────────────
+            if pages_needed:
+                await primary.verify()
+                semaphore = asyncio.Semaphore(max(1, primary.settings.page_concurrency))
+
+                async def _extract_and_cache(page_num: int) -> tuple[int, PageOCRResult | None]:
+                    async with semaphore:
+                        try:
+                            logger.info(f"Extracting page {page_num}/{total_pages} ...")
+                            result = await primary.extract_page(pdf_path, page_num)
+                            # Persist immediately — if the run crashes later this page
+                            # won't need to be re-processed on the next upload attempt.
+                            if pdf_hash and task_manager:
+                                task_manager.cache_page(pdf_hash, page_num, page_ocr_result_to_dict(result))
+                            return page_num, result
+                        except Exception as exc:
+                            # One page failing must not abort the entire document.
+                            logger.error(f"Page {page_num}/{total_pages} failed (will be empty): {exc}")
+                            return page_num, None
+
+                raw_pairs = await asyncio.gather(
+                    *[_extract_and_cache(p) for p in pages_needed]
+                )
+                failed_pages = []
+                for page_num, result in raw_pairs:
+                    if result is None:
+                        failed_pages.append(page_num)
+                        # Placeholder so the downstream pipeline can still run
+                        cached[page_num] = PageOCRResult(
+                            page_num=page_num, tokens=[], is_table=False,
+                            is_diagram=False, raw_text="", raw_html=None,
+                            primary_language=None, ocr_mode="ollama",
+                        )
+                    else:
+                        cached[page_num] = result
+
+                if failed_pages:
+                    logger.warning(
+                        f"{len(failed_pages)} page(s) could not be extracted and will be "
+                        f"empty in this result: {failed_pages}. "
+                        "Re-upload the same PDF — already-completed pages are cached in "
+                        "SQLite and will be skipped, so only the failed pages are retried."
+                    )
+
+            logger.info(f"BOQ extraction complete: all {total_pages} page(s) ready")
+            return [cached[p] for p in range(1, total_pages + 1)]
+
+
+        except Exception as primary_error:
             if not self.enable_olmocr_fallback:
                 raise ExtractionError(f"Primary BOQ extraction failed: {primary_error}") from primary_error
             logger.error("Primary BOQ extraction failed: %s; falling back to olmOCR", primary_error)
@@ -162,3 +228,4 @@ class OCRAdapter:
                 await fallback.close()
         finally:
             await primary.close()
+
