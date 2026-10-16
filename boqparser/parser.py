@@ -1,16 +1,15 @@
 """
-BOQParser — Main orchestration pipeline.
+BOQParser — Main unified orchestration pipeline for construction documents.
 
-Coordinates all modules:
-  1. PDFProcessor   — render pages at 300 DPI
-  2. OCRAdapter     — extract text (VLM or pypdfium2 fallback)
-  3. LayoutAnalyzer — classify page regions
-  4. TableReconstructor — build BOQRows
-  5. DomainCorrector — clean construction terminology
-  6. HierarchyDetector — build section tree
-  7. Validator      — check amount = qty × rate
+Coordinates:
+  1. PDFProcessor       — streaming native vector text and geometry extraction
+  2. StructureDiscovery — dynamic column & header alignment discovery
+  3. TableReconstructor — adaptive line item & multi-line description reconstruction
+  4. DomainCorrector    — clean construction terminology & normalize units
+  5. HierarchyDetector  — build section and bill hierarchy
+  6. Validator          — mathematical and schema verification
 
-Exports ParseResult which can be serialised by any Export module.
+Outputs ParseResult strictly conforming to the authoritative output.json blueprint.
 """
 
 from __future__ import annotations
@@ -23,12 +22,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from boqparser.adapter.ocr_adapter import OCRAdapter, PageOCRResult
-from boqparser.pdf.pdf_processor import PDFProcessor, PageImage
-from boqparser.layout.layout_analyzer import LayoutAnalyzer, LayoutResult
-from boqparser.table.table_reconstructor import TableReconstructor, BOQRow
-from boqparser.hierarchy.hierarchy_detector import HierarchyDetector, Section
 from boqparser.domain.domain_corrector import DomainCorrector
-from boqparser.validation.validator import Validator, ValidationSummary
+from boqparser.hierarchy.hierarchy_detector import HierarchyDetector, Section
+from boqparser.layout.layout_analyzer import LayoutAnalyzer, LayoutResult
+from boqparser.models.intermediate import CanonicalDocument, CanonicalSection
+from boqparser.pdf.pdf_processor import PDFProcessor
+from boqparser.pipeline.document_processor import DocumentProcessor
+from boqparser.table.table_reconstructor import BOQRow, TableReconstructor
+from boqparser.validation.validator import ValidationSummary, Validator
 
 logger = logging.getLogger(__name__)
 
@@ -39,195 +40,189 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ParseResult:
-    """Complete result of parsing a BOQ PDF."""
+    """Complete result of parsing a construction PDF."""
     source_file: str
     project_name: str
     report_type: str
     pdf_type: str                          # 'digital', 'scanned', or 'mixed'
-    ocr_mode: str                          # 'vlm' or 'fallback'
+    ocr_mode: str                          # 'native'
     total_pages: int
     sections: List[Section]
     all_rows: List[BOQRow]
     validation_summary: ValidationSummary
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_blueprint_dict(self) -> Dict[str, Any]:
+        """Convert to the exact dictionary schema matching output.json."""
         from boqparser.export.json_exporter import JSONExporter
-        return JSONExporter._build_dict(self)
+        return JSONExporter._build_blueprint_dict(self)
 
-    def save(self, output_dir: str, formats: Optional[List[str]] = None) -> Dict[str, str]:
-        """
-        Save parse result to multiple formats.
+    def to_dict(self) -> Dict[str, Any]:
+        """Returns blueprint dict along with top-level metadata for UI display."""
+        d = self.to_blueprint_dict()
+        # Attach top-level metadata for UI dashboard without corrupting the sections array
+        d["project_name"] = self.project_name
+        d["report_type"] = self.report_type
+        d["total_pages"] = self.total_pages
+        d["pdf_type"] = self.pdf_type
+        d["ocr_mode"] = self.ocr_mode
+        d["all_items"] = [row.to_dict() for row in self.all_rows if not getattr(row, "is_header_row", False) and not getattr(row, "is_subtotal_row", False)]
+        d["validation"] = self.validation_summary.to_dict() if hasattr(self.validation_summary, "to_dict") else {}
+        d["metadata"] = self.metadata
+        return d
 
-        Args:
-            output_dir: Directory to write output files.
-            formats:    List of formats: 'json', 'csv', 'xlsx', 'md', 'db'.
-                        Defaults to all.
-
-        Returns:
-            Dict mapping format → file path.
-        """
+    def save(self, output_path: str, formats: Optional[List[str]] = None) -> Dict[str, str]:
+        """Save parse result to multiple formats or a specific output file."""
         from boqparser.export import (
             JSONExporter, CSVExporter, ExcelExporter, MarkdownExporter, DBExporter
         )
 
+        out_path = Path(output_path)
+        paths: Dict[str, str] = {}
+        stem = Path(self.source_file).stem
+
+        # Check if output_path has a file extension (e.g. output.json, report.xlsx)
+        suffix = out_path.suffix.lower().lstrip(".")
+        if suffix in ("json", "csv", "xlsx", "md", "db"):
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            if suffix == "json":
+                p = JSONExporter().export(self, str(out_path))
+                paths["json"] = p
+            elif suffix == "csv":
+                p = CSVExporter().export(self, str(out_path))
+                paths["csv"] = p
+            elif suffix == "xlsx":
+                p = ExcelExporter().export(self, str(out_path))
+                paths["xlsx"] = p
+            elif suffix == "md":
+                p = MarkdownExporter().export(self, str(out_path))
+                paths["md"] = p
+            elif suffix == "db":
+                p = DBExporter().export(self, str(out_path))
+                paths["db"] = p
+            return paths
+
+        # Otherwise treat as output directory
         if formats is None:
             formats = ["json", "csv", "xlsx", "md", "db"]
 
-        out_dir = Path(output_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        stem = Path(self.source_file).stem
-
-        paths: Dict[str, str] = {}
+        out_path.mkdir(parents=True, exist_ok=True)
 
         if "json" in formats:
-            p = JSONExporter().export(self, str(out_dir / f"{stem}.json"))
+            p = JSONExporter().export(self, str(out_path / f"{stem}.json"))
             paths["json"] = p
 
         if "csv" in formats:
-            p = CSVExporter().export(self, str(out_dir / f"{stem}.csv"))
+            p = CSVExporter().export(self, str(out_path / f"{stem}.csv"))
             paths["csv"] = p
 
         if "xlsx" in formats:
             try:
-                p = ExcelExporter().export(self, str(out_dir / f"{stem}.xlsx"))
+                p = ExcelExporter().export(self, str(out_path / f"{stem}.xlsx"))
                 paths["xlsx"] = p
             except ImportError as e:
                 logger.warning(f"Excel export skipped: {e}")
 
         if "md" in formats:
-            p = MarkdownExporter().export(self, str(out_dir / f"{stem}.md"))
+            p = MarkdownExporter().export(self, str(out_path / f"{stem}.md"))
             paths["md"] = p
 
         if "db" in formats:
-            p = DBExporter().export(self, str(out_dir / f"{stem}.db"))
+            p = DBExporter().export(self, str(out_path / f"{stem}.db"))
             paths["db"] = p
 
         return paths
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Project name / report type detection
-# ─────────────────────────────────────────────────────────────────────────────
-
-_REPORT_TYPE_PATTERNS = {
-    "BOQ": re.compile(r"\bBOQ\b|bill of quantities|bill of quantity", re.IGNORECASE),
-    "Stagewise Report": re.compile(r"stage.?wise|stage report", re.IGNORECASE),
-    "Material Report": re.compile(r"material.?report|material.?summary", re.IGNORECASE),
-    "Estimation": re.compile(r"\bestimate\b|estimation|cost estimate", re.IGNORECASE),
-    "Quantity Survey": re.compile(r"quantity.?survey|QS report", re.IGNORECASE),
-}
-
-
-def _detect_report_type(text: str) -> str:
-    for rtype, pattern in _REPORT_TYPE_PATTERNS.items():
-        if pattern.search(text):
-            return rtype
-    return "Construction Report"
-
-
 def _extract_project_name(text: str, filename: str) -> str:
-    """
-    Try to extract a project name from the first few lines of OCR text.
-    Falls back to the PDF filename.
-    """
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-    # Look for a line with "PROJECT" or "PROPOSED" or ALL_CAPS title
     for line in lines[:15]:
         if re.search(r"project|proposed|building|residence|construction", line, re.IGNORECASE):
             if 5 < len(line) < 120:
                 return line.title()
-        if re.match(r"^[A-Z][A-Z\s\-,]+$", line) and 5 < len(line) < 80:
-            return line.title()
-
-    # Fall back to filename
     return Path(filename).stem.replace("_", " ").replace("-", " ").title()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BOQParser
+# BOQParser Facade
 # ─────────────────────────────────────────────────────────────────────────────
 
 class BOQParser:
     """
-    Production-grade BOQ PDF parser.
-
-    Wraps the olmocr VLM engine (or pypdfium2 fallback) to extract structured
-    data from construction BOQ PDFs.
-
-    Args:
-        server_url:       olmocr vLLM server URL. Default: http://localhost:8000/v1
-        model_name:       Model name registered in the vLLM server.
-        fallback_mode:    If True, always use pypdfium2 (no VLM).
-        dpi:              Rendering DPI (minimum 300).
-        n_cols:           Expected number of columns in BOQ tables.
-        tolerance:        Allowed relative error for amount validation.
-        fuzzy_threshold:  Fuzzy matching threshold for domain correction.
+    Unified local, layout-independent construction document parser.
     """
 
     def __init__(
         self,
         server_url: str = "http://localhost:8000/v1",
         model_name: str = "olmocr",
-        fallback_mode: bool = False,
+        fallback_mode: bool = True,
         dpi: int = 300,
         n_cols: int = 6,
         tolerance: float = 0.02,
         fuzzy_threshold: int = 85,
+        use_llm: bool = True,
+        ollama_model: str = "qwen2.5:1.5b",
+        ollama_host: str = "http://localhost:11434",
         task_manager: Optional[Any] = None,
         pdf_hash: Optional[str] = None,
     ):
-        self.ocr_adapter   = OCRAdapter(server_url, model_name, fallback_mode)
+        self.ollama_adapter = None
+        if use_llm:
+            from boqparser.mapping.ollama_adapter import OllamaAdapter
+            adapter = OllamaAdapter(base_url=ollama_host, model=ollama_model)
+            if adapter.is_available():
+                self.ollama_adapter = adapter
+                logger.info(f"Ollama connected: {ollama_host} (model: {ollama_model})")
+            else:
+                logger.info("Ollama server not reachable. Running in deterministic heuristic mode.")
+
+        self.ocr_adapter = OCRAdapter(server_url, model_name, fallback_mode=True)
         self.pdf_processor = PDFProcessor(dpi=dpi)
         self.layout_analyzer = LayoutAnalyzer()
-        self.table_reconstructor = TableReconstructor(n_cols=n_cols)
-        self.hierarchy_detector  = HierarchyDetector()
-        self.domain_corrector    = DomainCorrector(fuzzy_threshold=fuzzy_threshold)
-        self.validator           = Validator(tolerance=tolerance)
-        self.task_manager        = task_manager
-        self.pdf_hash            = pdf_hash
+        self.table_reconstructor = TableReconstructor(n_cols=n_cols, ollama_adapter=self.ollama_adapter)
+        self.hierarchy_detector = HierarchyDetector()
+        self.domain_corrector = DomainCorrector(fuzzy_threshold=fuzzy_threshold)
+        self.validator = Validator(tolerance=tolerance)
+        self.task_manager = task_manager
+        self.pdf_hash = pdf_hash
+        self.document_processor = DocumentProcessor(
+            tolerance=tolerance,
+            fuzzy_threshold=fuzzy_threshold,
+            ollama_adapter=self.ollama_adapter,
+        )
 
-    # ── main pipeline ─────────────────────────────────────────────────────────
-
-    def parse(self, pdf_path: str) -> ParseResult:
-        """
-        Parse a BOQ PDF end-to-end.
-
-        Args:
-            pdf_path: Path to the PDF file.
-
-        Returns:
-            ParseResult with sections, rows, and validation summary.
-        """
+    def parse(self, pdf_path: str, pages: Optional[List[int]] = None) -> ParseResult:
+        """Parse a construction PDF end-to-end natively."""
         pdf_path = str(Path(pdf_path).resolve())
         logger.info(f"BOQParser.parse(): {pdf_path}")
 
-        # Auto-detect Rate Analysis
+        # Check for specialized Rate Analysis format
         from boqparser.parser_rate_analysis import RateAnalysisParser
         if RateAnalysisParser.detect(pdf_path):
             logger.info("Rate Analysis format detected. Using RateAnalysisParser.")
             ra_parser = RateAnalysisParser(tolerance=self.validator.tolerance)
-            sections, all_rows = ra_parser.parse(pdf_path)
-            
+            sections, all_rows = ra_parser.parse(pdf_path, pages=pages)
+
             validation = self.validator.validate_all(all_rows, sections)
             all_text = " ".join(row.description for row in all_rows)
             project_name = _extract_project_name(all_text, pdf_path)
-            
+
             metadata = {
                 "total_pages": self.pdf_processor.get_page_count(pdf_path),
                 "pdf_type": self.pdf_processor.detect_pdf_type(pdf_path),
-                "ocr_mode": "local_fitz_rate_analysis",
+                "ocr_mode": "native",
                 "total_items": len(all_rows),
                 "sections_found": len(sections),
                 "validation_issues": validation.invalid_rows,
             }
-            
+
             return ParseResult(
                 source_file=pdf_path,
                 project_name=project_name,
                 report_type="Rate Analysis Report",
                 pdf_type=metadata["pdf_type"],
-                ocr_mode="local_fitz_rate_analysis",
+                ocr_mode="native",
                 total_pages=metadata["total_pages"],
                 sections=sections,
                 all_rows=all_rows,
@@ -235,59 +230,61 @@ class BOQParser:
                 metadata=metadata,
             )
 
-        # ── Step 1: PDF info ──────────────────────────────────────────────────
-        total_pages = self.pdf_processor.get_page_count(pdf_path)
-        pdf_type    = self.pdf_processor.detect_pdf_type(pdf_path)
-        page_dims   = self.pdf_processor.get_page_dimensions(pdf_path)
-        dim_tuples  = [(d["width_pts"], d["height_pts"]) for d in page_dims]
+        # Standard / Universal native streaming path
+        canonical_doc = self.document_processor.process_document(pdf_path, pages=pages)
 
-        logger.info(f"PDF: {total_pages} pages, type={pdf_type}")
+        # Convert CanonicalSection objects to Section for backwards compatibility
+        sections: List[Section] = []
+        all_rows: List[BOQRow] = []
 
-        # ── Step 2: OCR all pages ─────────────────────────────────────────────
-        ocr_results: List[PageOCRResult] = self.ocr_adapter.extract_all(pdf_path, total_pages, self.pdf_hash, self.task_manager)
-        ocr_mode = "vlm" if any(r.ocr_mode == "vlm" for r in ocr_results) else "fallback"
+        for c_sec in canonical_doc.sections:
+            sec_items: List[BOQRow] = []
+            for it in c_sec.items:
+                row = BOQRow(
+                    item_no=it.item_no,
+                    description=it.description,
+                    quantity=it.quantity,
+                    unit=it.unit,
+                    rate=it.net_rate,
+                    net_rate=it.net_rate,
+                    gross_rate=it.gross_rate,
+                    amount=it.amount,
+                    section_code=c_sec.section_code,
+                    section_title=c_sec.section_title,
+                    materials=[m.to_dict() if hasattr(m, "to_dict") else m for m in it.materials],
+                )
+                sec_items.append(row)
+                all_rows.append(row)
 
-        # ── Step 3: Layout analysis ───────────────────────────────────────────
-        layout_results: List[LayoutResult] = self.layout_analyzer.analyze_all(ocr_results, dim_tuples)
+            sec = Section(
+                section_code=c_sec.section_code,
+                section_title=c_sec.section_title,
+                number=c_sec.section_code,
+                title=c_sec.section_title,
+                items=sec_items,
+                subtotal=c_sec.subtotal,
+            )
+            sections.append(sec)
 
-        # ── Step 4: Table reconstruction ──────────────────────────────────────
-        all_rows: List[BOQRow] = self.table_reconstructor.reconstruct_all(ocr_results)
-
-        # ── Step 5: Domain correction ─────────────────────────────────────────
-        self.domain_corrector.correct_all(all_rows)
-
-        # ── Step 6: Hierarchy detection ───────────────────────────────────────
-        sections: List[Section] = self.hierarchy_detector.detect(all_rows)
-
-        # ── Step 7: Validation ────────────────────────────────────────────────
         validation = self.validator.validate_all(all_rows, sections)
-
-        # ── Metadata ──────────────────────────────────────────────────────────
-        all_text = " ".join(r.raw_text for r in ocr_results)
-        project_name = _extract_project_name(all_text, pdf_path)
-        report_type  = _detect_report_type(all_text + " " + Path(pdf_path).name)
+        project_name = _extract_project_name(Path(pdf_path).name, pdf_path)
 
         metadata = {
-            "total_pages": total_pages,
-            "pdf_type": pdf_type,
-            "ocr_mode": ocr_mode,
+            "total_pages": canonical_doc.total_pages,
+            "pdf_type": self.pdf_processor.detect_pdf_type(pdf_path),
+            "ocr_mode": "native",
             "total_items": len(all_rows),
             "sections_found": len(sections),
             "validation_issues": validation.invalid_rows,
         }
 
-        logger.info(
-            f"Parse complete: {len(all_rows)} rows, {len(sections)} sections, "
-            f"grand_total={validation.grand_total_computed}"
-        )
-
         return ParseResult(
             source_file=pdf_path,
             project_name=project_name,
-            report_type=report_type,
-            pdf_type=pdf_type,
-            ocr_mode=ocr_mode,
-            total_pages=total_pages,
+            report_type="Bill of Quantities",
+            pdf_type=metadata["pdf_type"],
+            ocr_mode="native",
+            total_pages=canonical_doc.total_pages,
             sections=sections,
             all_rows=all_rows,
             validation_summary=validation,
@@ -295,121 +292,28 @@ class BOQParser:
         )
 
     async def parse_async(self, pdf_path: str) -> ParseResult:
-        """
-        Async version of parse() — uses async OCR extraction for concurrent page processing.
-        """
+        """Async wrapper around parse()."""
         import asyncio
-        pdf_path = str(Path(pdf_path).resolve())
-        logger.info(f"BOQParser.parse_async(): {pdf_path}")
-
-        # Auto-detect Rate Analysis
-        from boqparser.parser_rate_analysis import RateAnalysisParser
-        if RateAnalysisParser.detect(pdf_path):
-            logger.info("Rate Analysis format detected (async path). Using RateAnalysisParser.")
-            loop = asyncio.get_event_loop()
-            ra_parser = RateAnalysisParser(tolerance=self.validator.tolerance)
-            sections, all_rows = await loop.run_in_executor(None, ra_parser.parse, pdf_path)
-            
-            validation = self.validator.validate_all(all_rows, sections)
-            all_text = " ".join(row.description for row in all_rows)
-            project_name = _extract_project_name(all_text, pdf_path)
-            
-            metadata = {
-                "total_pages": self.pdf_processor.get_page_count(pdf_path),
-                "pdf_type": self.pdf_processor.detect_pdf_type(pdf_path),
-                "ocr_mode": "local_fitz_rate_analysis",
-                "total_items": len(all_rows),
-                "sections_found": len(sections),
-                "validation_issues": validation.invalid_rows,
-            }
-            
-            return ParseResult(
-                source_file=pdf_path,
-                project_name=project_name,
-                report_type="Rate Analysis Report",
-                pdf_type=metadata["pdf_type"],
-                ocr_mode="local_fitz_rate_analysis",
-                total_pages=metadata["total_pages"],
-                sections=sections,
-                all_rows=all_rows,
-                validation_summary=validation,
-                metadata=metadata,
-            )
-
-        total_pages = self.pdf_processor.get_page_count(pdf_path)
-        pdf_type    = self.pdf_processor.detect_pdf_type(pdf_path)
-        page_dims   = self.pdf_processor.get_page_dimensions(pdf_path)
-        dim_tuples  = [(d["width_pts"], d["height_pts"]) for d in page_dims]
-
-        # Async OCR
-        ocr_results = await self.ocr_adapter.extract_all_async(pdf_path, total_pages, self.pdf_hash, self.task_manager)
-        ocr_mode = "vlm" if any(r.ocr_mode == "vlm" for r in ocr_results) else "fallback"
-
-        layout_results = self.layout_analyzer.analyze_all(ocr_results, dim_tuples)
-        all_rows = self.table_reconstructor.reconstruct_all(ocr_results)
-        self.domain_corrector.correct_all(all_rows)
-        sections = self.hierarchy_detector.detect(all_rows)
-        validation = self.validator.validate_all(all_rows, sections)
-
-        all_text = " ".join(r.raw_text for r in ocr_results)
-        project_name = _extract_project_name(all_text, pdf_path)
-        report_type  = _detect_report_type(all_text + " " + Path(pdf_path).name)
-
-        metadata = {
-            "total_pages": total_pages,
-            "pdf_type": pdf_type,
-            "ocr_mode": ocr_mode,
-            "total_items": len(all_rows),
-            "sections_found": len(sections),
-            "validation_issues": validation.invalid_rows,
-        }
-
-        return ParseResult(
-            source_file=pdf_path,
-            project_name=project_name,
-            report_type=report_type,
-            pdf_type=pdf_type,
-            ocr_mode=ocr_mode,
-            total_pages=total_pages,
-            sections=sections,
-            all_rows=all_rows,
-            validation_summary=validation,
-            metadata=metadata,
-        )
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.parse, pdf_path)
 
     def parse_batch(self, pdf_paths: List[str], output_dir: str, formats: Optional[List[str]] = None) -> List[Dict]:
-        """
-        Parse multiple PDFs and save outputs.
-
-        Args:
-            pdf_paths:  List of PDF file paths.
-            output_dir: Directory to save outputs.
-            formats:    Output formats (default all).
-
-        Returns:
-            List of dicts with 'pdf', 'status', 'output_files' keys.
-        """
+        """Batch parse multiple PDFs."""
         results = []
-        for pdf_path in pdf_paths:
-            logger.info(f"Batch processing: {pdf_path}")
+        for p in pdf_paths:
             try:
-                result = self.parse(pdf_path)
-                paths = result.save(output_dir, formats)
+                res = self.parse(p)
+                out_files = res.save(output_dir, formats)
                 results.append({
-                    "pdf": pdf_path,
+                    "pdf": p,
                     "status": "success",
-                    "project_name": result.project_name,
-                    "report_type": result.report_type,
-                    "total_rows": len(result.all_rows),
-                    "grand_total": result.validation_summary.grand_total_computed,
-                    "output_files": paths,
+                    "project_name": res.project_name,
+                    "report_type": res.report_type,
+                    "total_rows": len(res.all_rows),
+                    "grand_total": res.validation_summary.grand_total_computed,
+                    "output_files": out_files,
                 })
             except Exception as exc:
-                logger.exception(f"Failed to parse {pdf_path}: {exc}")
-                results.append({
-                    "pdf": pdf_path,
-                    "status": "error",
-                    "error": str(exc),
-                })
-
+                logger.exception(f"Failed to parse {p}: {exc}")
+                results.append({"pdf": p, "status": "error", "error": str(exc)})
         return results

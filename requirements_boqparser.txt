@@ -21,5 +21,9 @@ lxml>=5.2.0
 # YAML (already in olmocr, but listed for clarity)
 PyYAML>=6.0
 
-# numpy for x-coordinate clustering
+# Core Native Extraction & LLM
+pymupdf>=1.23.0
+requests>=2.31.0
+
+# numpy for coordinate clustering
 numpy>=1.26.0

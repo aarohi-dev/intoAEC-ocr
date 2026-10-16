@@ -47,7 +47,7 @@ def _get_parser() -> BOQParser:
     return BOQParser(
         server_url=os.environ.get("OLMOCR_SERVER_URL", "http://localhost:8000/v1"),
         model_name=os.environ.get("OLMOCR_MODEL_NAME", "olmocr"),
-        fallback_mode=os.environ.get("OLMOCR_FALLBACK", "").lower() in ("1", "true", "yes"),
+        fallback_mode=os.environ.get("OLMOCR_FALLBACK", "1").lower() in ("1", "true", "yes"),
         dpi=int(os.environ.get("BOQPARSER_DPI", "300")),
         tolerance=float(os.environ.get("BOQPARSER_TOLERANCE", "0.02")),
     )
@@ -435,6 +435,67 @@ def generate_html_report_from_pdf(pdf_path: str) -> str:
     import re
     import html
     import fitz
+    from boqparser.parser_rate_analysis import RateAnalysisParser
+
+    # If document is a standard BOQ or material report, render universal HTML table report
+    if not RateAnalysisParser.detect(pdf_path):
+        parser = _get_parser()
+        result = parser.parse(pdf_path)
+        title = html.escape(result.project_name or "Construction BOQ Report")
+        rows_html = []
+        for s in result.sections:
+            s_title = html.escape(f"{s.section_code} {s.section_title}".strip())
+            rows_html.append(f'<tr style="background:#1e293b; color:#93c5fd; font-weight:bold;"><td colspan="6">{s_title}</td></tr>')
+            for it in s.items:
+                if getattr(it, "is_header_row", False) or getattr(it, "is_subtotal_row", False):
+                    continue
+                qty = f"{it.quantity:,.2f}" if it.quantity is not None else "-"
+                rate = f"₹{it.rate:,.2f}" if it.rate is not None else "-"
+                amt = f"₹{it.amount:,.2f}" if it.amount is not None else "-"
+                rows_html.append(
+                    f'<tr>'
+                    f'<td style="padding:8px; border:1px solid #334155;">{html.escape(str(it.item_no or ""))}</td>'
+                    f'<td style="padding:8px; border:1px solid #334155;">{html.escape(str(it.description or ""))}</td>'
+                    f'<td style="padding:8px; border:1px solid #334155; text-align:right;">{qty}</td>'
+                    f'<td style="padding:8px; border:1px solid #334155; text-align:center;">{html.escape(str(it.unit or ""))}</td>'
+                    f'<td style="padding:8px; border:1px solid #334155; text-align:right;">{rate}</td>'
+                    f'<td style="padding:8px; border:1px solid #334155; text-align:right; font-weight:bold;">{amt}</td>'
+                    f'</tr>'
+                )
+
+        total_computed = f"₹{result.validation_summary.grand_total_computed:,.2f}"
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{title}</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:#0f172a; color:#f8fafc; padding:2rem; }}
+        table {{ width:100%; border-collapse:collapse; margin-top:1.5rem; background:#1e293b; border-radius:8px; overflow:hidden; }}
+        th {{ background:#334155; color:#f1f5f9; padding:10px; text-align:left; border:1px solid #475569; }}
+        td {{ border:1px solid #334155; }}
+        .header {{ display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:1rem; }}
+        .total-box {{ background:#1e293b; border:1px solid #3b82f6; padding:0.75rem 1.5rem; border-radius:6px; font-size:1.1rem; color:#60a5fa; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1 style="margin:0; font-size:1.5rem;">{title}</h1>
+            <p style="margin:4px 0 0; color:#94a3b8; font-size:0.9rem;">Total Pages: {result.total_pages} | Extracted Items: {len(result.all_rows)}</p>
+        </div>
+        <div class="total-box">Grand Total: <strong>{total_computed}</strong></div>
+    </div>
+    <table>
+        <thead>
+            <tr><th>Item No</th><th>Description</th><th style="text-align:right;">Quantity</th><th style="text-align:center;">Unit</th><th style="text-align:right;">Rate</th><th style="text-align:right;">Amount</th></tr>
+        </thead>
+        <tbody>
+            {"".join(rows_html)}
+        </tbody>
+    </table>
+</body>
+</html>"""
 
     UNIT_PAT = r'(?:Cft|CFT|Sft|SFT|SqFt|Sqft|Kg|KG|BAG|Nos|NOS|Ltr|LTR|LS|Ls|RFT|Rft|hr|Day|N/day|NO|m2|m3|Rm|rm|nos|litr|Litr)'
 

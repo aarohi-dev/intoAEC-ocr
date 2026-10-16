@@ -10,8 +10,16 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 
 import fitz
 
-PDF_PATH = Path(r"c:\Users\Sai Abhijeet\OneDrive\Desktop\intocr\olmocr\Rev.Report 5 - Rate analyis.pdf")
-OUT_HTML = PDF_PATH.parent / "Rate_Analysis_Report.html"
+default_pdf = Path(__file__).resolve().parent / "test_documents" / "Rev.Report 5 - Rate analyis.pdf"
+if len(sys.argv) > 1:
+    PDF_PATH = Path(sys.argv[1])
+else:
+    PDF_PATH = default_pdf
+
+if len(sys.argv) > 2:
+    OUT_HTML = Path(sys.argv[2])
+else:
+    OUT_HTML = PDF_PATH.parent / f"{PDF_PATH.stem}_Report.html"
 
 UNIT_PAT = r'(?:Cft|CFT|Sft|SFT|SqFt|Sqft|Kg|KG|BAG|Nos|NOS|Ltr|LTR|LS|Ls|RFT|Rft|hr|Day|N/day|NO|m2|m3|Rm|rm|nos|litr|Litr|Lit|Liter|Coils)'
 WI_RE  = re.compile(

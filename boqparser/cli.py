@@ -48,14 +48,22 @@ def cli():
 @cli.command()
 @click.argument("pdf_path", type=click.Path(exists=True, dir_okay=False))
 @click.option("--output-dir", "-o", default="./boq_output", show_default=True,
-              help="Directory for output files.")
+              help="Destination directory or output file path (e.g. output.json).")
 @click.option("--format", "-f", "formats",
               default="json,csv,xlsx,md,db", show_default=True,
               help="Comma-separated list of output formats: json,csv,xlsx,md,db")
+@click.option("--pages", default=None,
+              help="Comma-separated 1-based page numbers (e.g. '1,2,32,33').")
+@click.option("--llm/--no-llm", default=True, show_default=True,
+              help="Enable bounded Ollama LLM semantic disambiguation.")
+@click.option("--ollama-model", default="qwen2.5:1.5b", show_default=True,
+              help="Ollama model for semantic disambiguation.")
+@click.option("--ollama-host", default="http://localhost:11434", show_default=True,
+              help="Ollama API base URL.")
 @click.option("--server-url", default="http://localhost:8000/v1", show_default=True,
-              help="olmocr vLLM server URL.")
-@click.option("--fallback", is_flag=True, default=False,
-              help="Force pypdfium2 fallback (no VLM server required).")
+              help="Optional olmocr vLLM server URL.")
+@click.option("--fallback", is_flag=True, default=True,
+              help="Use lightweight native PDF extraction (default, no server needed).")
 @click.option("--dpi", default=300, show_default=True, type=int,
               help="PDF rendering DPI (minimum 300).")
 @click.option("--tolerance", default=0.02, show_default=True, type=float,
@@ -68,6 +76,10 @@ def parse(
     pdf_path: str,
     output_dir: str,
     formats: str,
+    pages: Optional[str],
+    llm: bool,
+    ollama_model: str,
+    ollama_host: str,
     server_url: str,
     fallback: bool,
     dpi: int,
@@ -83,10 +95,23 @@ def parse(
         logging.getLogger().setLevel(logging.DEBUG)
 
     fmt_list = [f.strip() for f in formats.split(",") if f.strip()]
+    page_list: Optional[List[int]] = None
+    if pages:
+        page_list = [int(p.strip()) for p in pages.split(",") if p.strip().isdigit()]
 
     click.echo(f"Parsing: {pdf_path}")
-    click.echo(f"   Server: {server_url} {'(fallback mode)' if fallback else ''}")
+    if llm:
+        from boqparser.mapping.ollama_adapter import OllamaAdapter
+        check = OllamaAdapter(base_url=ollama_host, model=ollama_model).is_available()
+        if check:
+            click.echo(f"   LLM: {ollama_model} active via {ollama_host}")
+        else:
+            click.echo(f"   LLM: Offline ({ollama_host} unreachable) - using deterministic heuristic fallback")
+    else:
+        click.echo("   LLM: Disabled (deterministic mode)")
     click.echo(f"   DPI: {dpi} | Formats: {', '.join(fmt_list)}")
+    if page_list:
+        click.echo(f"   Pages: {page_list}")
     click.echo()
 
     try:
@@ -97,8 +122,11 @@ def parse(
             dpi=dpi,
             tolerance=tolerance,
             fuzzy_threshold=fuzzy_threshold,
+            use_llm=llm,
+            ollama_model=ollama_model,
+            ollama_host=ollama_host,
         )
-        result = parser.parse(pdf_path)
+        result = parser.parse(pdf_path, pages=page_list)
     except Exception as exc:
         click.echo(f"[ERROR] Parse failed: {exc}", err=True)
         if verbose:
@@ -140,7 +168,7 @@ def parse(
 @click.option("--output-dir", "-o", default="./boq_output", show_default=True)
 @click.option("--format", "-f", "formats", default="json,csv,xlsx,md,db", show_default=True)
 @click.option("--server-url", default="http://localhost:8000/v1", show_default=True)
-@click.option("--fallback", is_flag=True, default=False)
+@click.option("--fallback", is_flag=True, default=True)
 @click.option("--dpi", default=300, show_default=True, type=int)
 @click.option("--tolerance", default=0.02, show_default=True, type=float)
 @click.option("--pattern", default="*.pdf", show_default=True,

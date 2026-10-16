@@ -1,15 +1,12 @@
 """
-Table Reconstructor — converts OCR tokens or VLM HTML table output into
-structured BOQRow records.
+Adaptive Table Reconstructor — converts PDF text and coordinates into structured BOQ rows.
 
-Two reconstruction paths:
-  1. HTML path  — when olmocr model returns <table> HTML (is_table=True, VLM mode)
-                  Parse with html.parser / lxml.
-  2. Text path  — when tokens are plain text with or without coordinates.
-                  Uses x-coordinate k-means clustering to find columns,
-                  then groups tokens into rows by y-proximity.
-
-Column labeling heuristics detect: item_no, description, quantity, unit, rate, amount.
+Handles:
+- Arbitrary column ordering (e.g. Amount on left or right, Unit before or after Quantity)
+- Multi-line wrapped descriptions (preambles, specifications, multi-line text)
+- Cross-page table continuations
+- Merged headers, section headers, and subtotal rows
+- Rate analysis resource groupings
 """
 
 from __future__ import annotations
@@ -19,28 +16,37 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from boqparser.layout.structure_discovery import ColumnDef, StructureDiscovery, TableStructure
+from boqparser.pdf.pdf_processor import PageData, TextLine, WordBox
+
 logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BOQ Row data type
+# BOQ Row Data Types
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class BOQRow:
-    """A single line item in a Bill of Quantities."""
+    """A single line item in a Bill of Quantities or Estimation report."""
     item_no: str = ""
     description: str = ""
     quantity: Optional[float] = None
     unit: str = ""
     rate: Optional[float] = None
+    net_rate: Optional[float] = None
+    gross_rate: Optional[float] = None
     amount: Optional[float] = None
-    raw_cells: List[str] = field(default_factory=list)   # original cell texts
     page_num: int = 0
     is_header_row: bool = False
     is_subtotal_row: bool = False
+    is_section_header: bool = False
+    section_code: str = ""
+    section_title: str = ""
     confidence: float = 1.0
     groups: List[Any] = field(default_factory=list)
+    materials: List[Any] = field(default_factory=list)
+    raw_cells: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
@@ -48,8 +54,11 @@ class BOQRow:
             "description": self.description,
             "quantity": self.quantity,
             "unit": self.unit,
-            "rate": self.rate,
+            "rate": self.rate if self.rate is not None else self.net_rate,
+            "net_rate": self.net_rate if self.net_rate is not None else self.rate,
+            "gross_rate": self.gross_rate if self.gross_rate is not None else (self.rate if self.rate is not None else self.net_rate),
             "amount": self.amount,
+            "materials": self.materials,
         }
         if self.groups:
             d["groups"] = self.groups
@@ -57,553 +66,340 @@ class BOQRow:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helpers
+# Helper functions & Parsers
 # ─────────────────────────────────────────────────────────────────────────────
 
-_ITEM_NO_RE   = re.compile(r"^\d+(?:[.\-]\d+)*\.?[A-Za-z]?$")
-_NUMBER_RE    = re.compile(r"^-?\d[\d,]*(?:\.\d+)?$")
-_UNIT_VOCAB   = {
-    "cft", "sqft", "sqmt", "sft", "rmt", "rm", "no", "nos", "nos.",
-    "no.", "kg", "mt", "ltr", "litre", "bag", "bags", "cum", "cmt",
-    "sqm", "m2", "m3", "rft", "lm", "unit", "units", "set", "sets",
-    "pair", "pairs", "roll", "rolls", "lump", "ls", "l/s",
-}
-_SUBTOTAL_KEYWORDS = {"total", "subtotal", "sub total", "grand total", "sum"}
-_HEADER_KEYWORDS   = {
-    "item", "description", "qty", "quantity", "unit", "rate", "amount",
-    "sl", "sl.no", "s.no", "sr", "sr.no", "particulars", "work",
+_KNOWN_UNITS = {
+    "cft", "sqft", "sft", "sqm", "cum", "rft", "rmt", "kg", "bag", "bags",
+    "nos", "nos.", "no", "no.", "nr", "each", "set", "lot", "ls", "item",
+    "m", "m2", "m3", "mm", "cm", "km", "ton", "tonne", "litr", "liter",
+    "ltr", "day", "hr", "hour", "hours", "days", "coils", "month", "wk",
 }
 
-
-def _to_float(text: str) -> Optional[float]:
-    """Parse a number string, tolerating commas."""
-    if text is None:
+def _to_float(val: Any) -> Optional[float]:
+    if val is None or val == "":
         return None
-    cleaned = str(text).replace(",", "").strip()
+    cleaned = str(val).replace(",", "").replace(" ", "").strip()
     try:
         return float(cleaned)
     except (ValueError, TypeError):
         return None
 
+def _is_number(val: str) -> bool:
+    if not val:
+        return False
+    cleaned = str(val).replace(",", "").replace(" ", "").strip()
+    return bool(re.match(r"^-?\d+(?:\.\d+)?$", cleaned))
 
-def _is_number(text: str) -> bool:
-    cleaned = text.replace(",", "").strip()
-    return bool(_NUMBER_RE.match(cleaned))
+def _is_unit(val: str) -> bool:
+    if not val:
+        return False
+    cleaned = str(val).strip().lower()
+    return cleaned in _KNOWN_UNITS or cleaned.rstrip(".") in _KNOWN_UNITS
 
-
-def _is_unit(text: str) -> bool:
-    return text.strip().lower() in _UNIT_VOCAB
-
-
-def _is_item_no(text: str) -> bool:
-    return bool(_ITEM_NO_RE.match(text.strip()))
-
+def _is_item_no(val: str) -> bool:
+    if not val:
+        return False
+    v = str(val).strip()
+    return bool(re.match(r"^\d+(?:\.\d+)*[a-zA-Z]?$", v))
 
 def _is_header_row(cells: List[str]) -> bool:
-    lc = {c.strip().lower() for c in cells}
-    return len(lc & _HEADER_KEYWORDS) >= 2
+    if not cells:
+        return False
+    header_keywords = {"item", "sl.no", "sl no", "no.", "description", "particulars", "qty", "quantity", "unit", "rate", "amount", "price"}
+    matches = sum(1 for c in cells if any(k in str(c).lower() for k in header_keywords))
+    return matches >= 2
 
+def _positional_column_map(num_cols: int) -> Dict[int, str]:
+    std = {0: "item_no", 1: "description", 2: "quantity", 3: "unit", 4: "rate", 5: "amount"}
+    return {i: std.get(i, f"col_{i}") for i in range(num_cols)}
 
-def _is_subtotal_row(cells: List[str]) -> bool:
-    combined = " ".join(cells).lower()
-    for kw in _SUBTOTAL_KEYWORDS:
-        if re.search(r"\b" + re.escape(kw) + r"\b", combined):
-            return True
-    return False
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Column label detection
-# ─────────────────────────────────────────────────────────────────────────────
-
-_COLUMN_LABELS = ["item_no", "description", "quantity", "unit", "rate", "amount"]
-
-def _detect_column_map(header_cells: List[str]) -> Dict[int, str]:
-    """
-    Map column index → field name using header row text.
-    Falls back to positional heuristics if header is missing.
-    """
-    col_map: Dict[int, str] = {}
-    assigned_labels = set()
-    for i, cell in enumerate(header_cells):
-        lc = cell.strip().lower()
-        if any(x in lc for x in ("item", "sl", "sr", "s.no", "no.", "id", "resource id")) and "item_no" not in assigned_labels:
-            col_map[i] = "item_no"
-            assigned_labels.add("item_no")
-        elif any(x in lc for x in ("desc", "particular", "work", "material", "activity", "name", "resource name")) and "description" not in assigned_labels:
-            col_map[i] = "description"
-            assigned_labels.add("description")
-        elif any(x in lc for x in ("qty", "quant")) and "quantity" not in assigned_labels:
-            col_map[i] = "quantity"
-            assigned_labels.add("quantity")
-        elif any(x in lc for x in ("unit", "uom", "u/m")) and "unit" not in assigned_labels:
-            col_map[i] = "unit"
-            assigned_labels.add("unit")
-        elif any(x in lc for x in ("rate", "price")) and "rate" not in assigned_labels:
-            col_map[i] = "rate"
-            assigned_labels.add("rate")
-        elif any(x in lc for x in ("amount", "total", "value", "cost", "rs.", "inr")) and "amount" not in assigned_labels:
-            col_map[i] = "amount"
-            assigned_labels.add("amount")
-    return col_map
-
-
-def _positional_column_map(n_cols: int) -> Dict[int, str]:
-    """
-    Fallback column map based on typical BOQ column order:
-    item_no | description | quantity | unit | rate | amount
-    """
-    if n_cols == 6:
-        return {0: "item_no", 1: "description", 2: "quantity", 3: "unit", 4: "rate", 5: "amount"}
-    elif n_cols == 5:
-        return {0: "item_no", 1: "description", 2: "quantity", 3: "unit", 4: "amount"}
-    elif n_cols == 4:
-        return {0: "item_no", 1: "description", 2: "quantity", 3: "amount"}
-    elif n_cols == 3:
-        return {0: "description", 1: "quantity", 2: "amount"}
-    elif n_cols == 2:
-        return {0: "description", 1: "amount"}
-    else:
-        return {i: "description" for i in range(n_cols)}
-
-
-def _cells_to_row(cells: List[str], col_map: Dict[int, str], page_num: int) -> BOQRow:
-    """Convert a list of cell strings to a BOQRow using a column map."""
-    row = BOQRow(raw_cells=list(cells), page_num=page_num)
-
-    for i, cell in enumerate(cells):
-        label = col_map.get(i)
-        if label is None:
-            # Try to infer: if it looks like a number and nothing is set yet
-            if _is_item_no(cell) and not row.item_no:
-                row.item_no = cell.strip()
-            elif _is_unit(cell) and not row.unit:
-                row.unit = cell.strip()
-            elif _is_number(cell):
-                v = _to_float(cell)
-                if row.quantity is None:
-                    row.quantity = v
-                elif row.rate is None:
-                    row.rate = v
-                elif row.amount is None:
-                    row.amount = v
-            elif not row.description:
-                row.description = cell.strip()
+def _cells_to_row(cells: List[str], col_map: Dict[int, str], page_num: int = 1) -> BOQRow:
+    row_data: Dict[str, Any] = {"page_num": page_num}
+    for idx, cell in enumerate(cells):
+        field = col_map.get(idx)
+        if not field:
             continue
+        c_str = str(cell).strip()
+        if field in ("quantity", "rate", "amount", "net_rate", "gross_rate"):
+            row_data[field] = _to_float(c_str)
+        else:
+            row_data[field] = c_str
+    return BOQRow(**row_data)
 
-        val = cell.strip()
-        if label == "item_no":
-            row.item_no = val
-        elif label == "description":
-            row.description = val
-        elif label == "quantity":
-            row.quantity = _to_float(val)
-        elif label == "unit":
-            row.unit = val
-        elif label == "rate":
-            row.rate = _to_float(val)
-        elif label == "amount":
-            row.amount = _to_float(val)
-
-    row.is_header_row = _is_header_row(cells)
-    row.is_subtotal_row = _is_subtotal_row(cells)
-    return row
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HTML table parser
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _parse_html_table(html: str, page_num: int) -> List[BOQRow]:
-    """Parse an HTML <table> string into BOQRows."""
+def _parse_html_table(html_str: str, page_num: int = 1) -> List[BOQRow]:
+    if not html_str or not html_str.strip():
+        return []
+    tr_matches = re.findall(r'<tr[^>]*>(.*?)</tr>', html_str, re.IGNORECASE | re.DOTALL)
+    if not tr_matches:
+        return []
     rows: List[BOQRow] = []
-    col_map: Dict[int, str] = {}
-
-    try:
-        from html.parser import HTMLParser
-
-        class _TableParser(HTMLParser):
-            def __init__(self):
-                super().__init__()
-                self.all_rows: List[List[str]] = []
-                self._current_row: List[str] = []
-                self._current_cell: str = ""
-                self._in_cell: bool = False
-                self._in_header: bool = False
-
-            def handle_starttag(self, tag, attrs):
-                if tag in ("td", "th"):
-                    self._in_cell = True
-                    self._in_header = (tag == "th")
-                    self._current_cell = ""
-                elif tag == "tr":
-                    self._current_row = []
-
-            def handle_endtag(self, tag):
-                if tag in ("td", "th"):
-                    self._current_row.append(self._current_cell.strip())
-                    self._in_cell = False
-                    self._current_cell = ""
-                elif tag == "tr":
-                    if self._current_row:
-                        self.all_rows.append(self._current_row)
-                        self._current_row = []
-
-            def handle_data(self, data):
-                if self._in_cell:
-                    self._current_cell += data
-
-        parser = _TableParser()
-        parser.feed(html)
-        raw_rows = parser.all_rows
-
-    except Exception as exc:
-        logger.warning(f"HTML table parse failed: {exc}")
-        return []
-
-    if not raw_rows:
-        return []
-
-    # Detect header row
-    header_idx = -1
-    for i, r in enumerate(raw_rows[:3]):
-        if _is_header_row(r):
-            col_map = _detect_column_map(r)
-            header_idx = i
-            break
-
-    if not col_map and raw_rows:
-        col_map = _positional_column_map(len(raw_rows[0]))
-
-    for i, r in enumerate(raw_rows):
-        if i == header_idx:
+    col_map = _positional_column_map(6)
+    for tr in tr_matches:
+        cells = re.findall(r'<(?:td|th)[^>]*>(.*?)</(?:td|th)>', tr, re.IGNORECASE | re.DOTALL)
+        clean_cells = [re.sub(r'<[^>]+>', ' ', c).strip() for c in cells]
+        if not clean_cells or _is_header_row(clean_cells):
             continue
-        if not any(c.strip() for c in r):
-            continue
-        row = _cells_to_row(r, col_map, page_num)
-        if i == header_idx:
-            row.is_header_row = True
+        if len(clean_cells) < 6:
+            clean_cells.extend([""] * (6 - len(clean_cells)))
+        row = _cells_to_row(clean_cells[:6], col_map, page_num=page_num)
         rows.append(row)
-
     return rows
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# X-coordinate clustering (for plain text / pypdfium2 tokens)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _cluster_x_centers(x_centers: List[float], n_cols: int) -> List[float]:
-    """
-    Simple 1-D k-means on x-center values to find column centers.
-    Returns sorted column center positions.
-    """
-    import numpy as np
-    if not x_centers or n_cols <= 0:
-        return []
-
-    arr = np.array(x_centers).reshape(-1, 1)
-    n_cols = min(n_cols, len(x_centers))
-
-    # Initialize centers spread across x range
-    mn, mx = arr.min(), arr.max()
-    centers = np.linspace(mn, mx, n_cols).reshape(-1, 1)
-
-    for _ in range(20):
-        # Assign
-        dists = np.abs(arr - centers.T)
-        labels = dists.argmin(axis=1)
-        # Update
-        new_centers = np.array([
-            arr[labels == k].mean() if (labels == k).any() else centers[k]
-            for k in range(n_cols)
-        ])
-        if np.allclose(centers.flatten(), new_centers.flatten(), atol=1.0):
-            break
-        centers = new_centers.reshape(-1, 1)
-
-    return sorted(centers.flatten().tolist())
-
-
-from boqparser.adapter.ocr_adapter import OCRToken
-
-
-def _tokens_to_column_rows(
-    tokens: List[OCRToken],
-    n_cols: int = 6,
-    y_gap: float = 6.0,
-    page_num: int = 0,
-) -> List[BOQRow]:
-    """
-    Reconstruct table rows from tokens with x/y coordinate data.
-
-    1. Dynamically detect column count.
-    2. Cluster token x-centers into n_cols columns.
-    3. Group tokens with similar y_min into rows.
-    4. Map each token to its nearest column.
-    5. Detect column labels and convert to BOQRow.
-    """
-    if not tokens:
-        return []
-
-    has_coords = any(
-        t.bbox[0] != 0 or t.bbox[2] != 0 for t in tokens
-    )
-
-    if not has_coords:
-        # No coordinates — treat each token as a separate "line"
-        return _tokens_to_lines(tokens, page_num)
-
-    import numpy as np
-
-    # ── Step 1: Dynamically detect column count ──────────────────────────────
-    # Group tokens into lines to find the maximum horizontal components
-    sorted_tokens = sorted(tokens, key=lambda t: t.bbox[1])
-    y_groups_detect: List[List[OCRToken]] = []
-    current_group_detect: List[OCRToken] = [sorted_tokens[0]]
-    current_y_detect = sorted_tokens[0].bbox[1]
-
-    for tok in sorted_tokens[1:]:
-        if abs(tok.bbox[1] - current_y_detect) <= y_gap:
-            current_group_detect.append(tok)
-        else:
-            y_groups_detect.append(current_group_detect)
-            current_group_detect = [tok]
-            current_y_detect = tok.bbox[1]
-    if current_group_detect:
-        y_groups_detect.append(current_group_detect)
-
-    max_cells_found = 0
-    for g in y_groups_detect:
-        line_sorted = sorted(g, key=lambda t: t.bbox[0])
-        if not line_sorted:
-            continue
-        cells_count = 1
-        last_x2 = line_sorted[0].bbox[2]
-        for t in line_sorted[1:]:
-            # If gap between current token start and previous token end > 8.0 points
-            if t.bbox[0] - last_x2 > 8.0:
-                cells_count += 1
-            last_x2 = max(last_x2, t.bbox[2])
-        if cells_count > max_cells_found:
-            max_cells_found = cells_count
-
-    # Enforce minimum 3 and maximum 15 columns for stability
-    n_cols = min(15, max(3, max_cells_found))
-
-    # ── Step 2: cluster x centers ────────────────────────────────────────────
-    x_centers = [(t.bbox[0] + t.bbox[2]) / 2.0 for t in tokens]
-    col_centers = _cluster_x_centers(x_centers, n_cols)
-
-    if not col_centers:
-        return _tokens_to_lines(tokens, page_num)
-
-    def nearest_col(xc: float) -> int:
-        return int(np.argmin([abs(xc - cc) for cc in col_centers]))
-
-    # ── Step 2: group by y band ──────────────────────────────────────────────
-    sorted_tokens = sorted(tokens, key=lambda t: t.bbox[1])
-    y_groups: List[List[OCRToken]] = []
-    current_group: List[OCRToken] = [sorted_tokens[0]]
-    current_y = sorted_tokens[0].bbox[1]
-
-    for tok in sorted_tokens[1:]:
-        if abs(tok.bbox[1] - current_y) <= y_gap:
-            current_group.append(tok)
-        else:
-            y_groups.append(current_group)
-            current_group = [tok]
-            current_y = tok.bbox[1]
-    if current_group:
-        y_groups.append(current_group)
-
-    # ── Step 3: build cell matrix ────────────────────────────────────────────
-    raw_rows: List[List[str]] = []
-    for group in y_groups:
-        cells = [""] * len(col_centers)
-        for tok in group:
-            xc = (tok.bbox[0] + tok.bbox[2]) / 2.0
-            col_idx = nearest_col(xc)
-            if cells[col_idx]:
-                cells[col_idx] += " " + tok.text
-            else:
-                cells[col_idx] = tok.text
-        raw_rows.append(cells)
-
-    if not raw_rows:
-        return []
-
-    # ── Step 4: detect column labels ─────────────────────────────────────────
-    col_map: Dict[int, str] = {}
-    for i, r in enumerate(raw_rows[:3]):
-        if _is_header_row(r):
-            col_map = _detect_column_map(r)
-            break
-
-    if not col_map:
-        col_map = _positional_column_map(len(col_centers))
-
-    return [_cells_to_row(r, col_map, page_num) for r in raw_rows if any(c.strip() for c in r)]
-
-
-def _tokens_to_lines(tokens: List[OCRToken], page_num: int) -> List[BOQRow]:
-    """
-    Convert a flat list of text tokens into BOQRows using positional heuristics.
-    Used when no coordinate data is present.
-    """
-    rows: List[BOQRow] = []
-    # Group consecutive tokens into logical lines (splitting on obvious separators)
-    lines: List[str] = []
-    current = []
-    for tok in tokens:
-        if tok.text.strip() in ("", "|"):
-            if current:
-                lines.append(" ".join(current))
-                current = []
-        else:
-            current.append(tok.text.strip())
-    if current:
-        lines.append(" ".join(current))
-
-    for line in lines:
-        if not line.strip():
-            continue
-        # Try to split a line into cells by multiple spaces or tab characters
-        cells = re.split(r"\s{2,}|\t", line.strip())
-        cells = [c.strip() for c in cells if c.strip()]
-        if not cells:
-            continue
-        col_map = _positional_column_map(len(cells))
-        rows.append(_cells_to_row(cells, col_map, page_num))
-
-    return rows
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TableReconstructor
-# ─────────────────────────────────────────────────────────────────────────────
 
 class TableReconstructor:
     """
-    Reconstructs structured BOQ rows from OCR output.
-
-    Strategy:
-    - If olmocr VLM returned is_table=True and raw_html contains <table>:
-        → Parse HTML directly (most accurate)
-    - Elif raw_text contains pipe-separated markdown table:
-        → Parse markdown table
-    - Else:
-        → Use x-coordinate clustering on tokens with bbox data
-        → Or line-splitting heuristic for tokenized plain text
-
-    Args:
-        n_cols:       Expected number of columns (default 6 for standard BOQ).
-        y_gap:        Maximum y-distance (pts) between tokens on the same row.
+    Adaptive table reconstructor with coordinate-based multi-line merging.
     """
 
-    def __init__(self, n_cols: int = 6, y_gap: float = 8.0):
+    def __init__(self, n_cols: int = 6, y_gap: float = 6.0, ollama_adapter: Optional[Any] = None):
         self.n_cols = n_cols
         self.y_gap = y_gap
+        self.structure_discovery = StructureDiscovery(ollama_adapter=ollama_adapter)
 
-    # ── markdown table parser ────────────────────────────────────────────────
+    # ── numeric & string helpers ─────────────────────────────────────────────
 
     @staticmethod
-    def _parse_markdown_table(text: str, page_num: int) -> List[BOQRow]:
-        rows: List[BOQRow] = []
-        col_map: Dict[int, str] = {}
-        raw_rows: List[List[str]] = []
+    def _to_float(val: Any) -> Optional[float]:
+        return _to_float(val)
 
-        for line in text.splitlines():
-            line = line.strip()
-            if not line.startswith("|"):
-                continue
-            if re.match(r"^\|[-| ]+\|$", line):
-                continue  # separator row
-            cells = [c.strip() for c in line.strip("|").split("|")]
-            raw_rows.append(cells)
+    @staticmethod
+    def _is_number(val: str) -> bool:
+        return _is_number(val)
 
-        if not raw_rows:
-            return []
-
-        for i, r in enumerate(raw_rows[:2]):
-            if _is_header_row(r):
-                col_map = _detect_column_map(r)
-                break
-
-        if not col_map and raw_rows:
-            col_map = _positional_column_map(len(raw_rows[0]))
-
-        for r in raw_rows:
-            if any(c.strip() for c in r):
-                rows.append(_cells_to_row(r, col_map, page_num))
-
-        return rows
-
-    # ── public API ────────────────────────────────────────────────────────────
+    @staticmethod
+    def _clean_item_no(val: str) -> str:
+        """Strip trailing dots or punctuation from item number."""
+        if not val:
+            return ""
+        return val.strip().rstrip(".").strip()
 
     def reconstruct(
         self,
-        tokens: List[OCRToken],
+        tokens: Optional[List[Any]] = None,
         raw_html: Optional[str] = None,
         raw_text: str = "",
-        is_table: bool = False,
-        page_num: int = 0,
+        is_table: bool = True,
+        page_num: int = 1,
     ) -> List[BOQRow]:
-        """
-        Reconstruct BOQ rows from OCR output for a single page.
-
-        Args:
-            tokens:   OCRToken list for this page.
-            raw_html: HTML table string from VLM output (if any).
-            raw_text: Natural text from VLM output (if any).
-            is_table: Whether olmocr flagged this page as a table page.
-            page_num: Page number for metadata.
-
-        Returns:
-            List of BOQRow.
-        """
-        # ── Path 1: HTML table (VLM, most accurate) ──────────────────────────
-        if raw_html and "<table" in raw_html.lower():
-            logger.debug(f"Page {page_num}: using HTML table reconstruction")
-            rows = _parse_html_table(raw_html, page_num)
+        if raw_html:
+            return _parse_html_table(raw_html, page_num=page_num)
+        if raw_text and ("|" in raw_text):
+            lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
+            rows: List[BOQRow] = []
+            col_map = _positional_column_map(6)
+            for line in lines:
+                if line.startswith("|") and line.endswith("|"):
+                    parts = [p.strip() for p in line.strip("|").split("|")]
+                    if not parts or all(set(p) <= {"-", ":", " "} for p in parts) or _is_header_row(parts):
+                        continue
+                    if len(parts) < 6:
+                        parts.extend([""] * (6 - len(parts)))
+                    rows.append(_cells_to_row(parts[:6], col_map, page_num=page_num))
             if rows:
                 return rows
 
-        # ── Path 2: Markdown table ────────────────────────────────────────────
-        if raw_text and "|" in raw_text:
-            rows = self._parse_markdown_table(raw_text, page_num)
+        if raw_text:
+            lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
+            rows: List[BOQRow] = []
+            for line in lines:
+                parts = line.split()
+                if len(parts) >= 2 and _is_item_no(parts[0]):
+                    item_no = parts[0]
+                    desc = " ".join(parts[1:])
+                    # Parse potential numbers at the end
+                    rows.append(BOQRow(item_no=item_no, description=desc, page_num=page_num))
             if rows:
-                logger.debug(f"Page {page_num}: using markdown table reconstruction")
                 return rows
-
-        # ── Path 3: coordinate-based clustering ───────────────────────────────
-        if tokens:
-            logger.debug(f"Page {page_num}: using coordinate-based reconstruction")
-            return _tokens_to_column_rows(tokens, self.n_cols, self.y_gap, page_num)
 
         return []
 
-    def reconstruct_all(
-        self,
-        ocr_results,  # List[PageOCRResult]
-    ) -> List[BOQRow]:
-        """
-        Reconstruct BOQ rows from all pages.
-        Filters out header rows and empty rows.
-        """
-        all_rows: List[BOQRow] = []
-        for result in ocr_results:
-            raw_html = result.raw_html
-            # Check first token for raw_html (VLM path attaches it there)
-            if not raw_html and result.tokens and result.tokens[0].raw_html:
-                raw_html = result.tokens[0].raw_html
+    # ── native page extraction ───────────────────────────────────────────────
 
-            page_rows = self.reconstruct(
-                tokens=result.tokens,
-                raw_html=raw_html,
-                raw_text=result.raw_text,
-                is_table=result.is_table,
-                page_num=result.page_num,
+    def reconstruct_page(
+        self,
+        page: PageData,
+        active_structure: Optional[TableStructure] = None,
+    ) -> Tuple[List[BOQRow], Optional[TableStructure]]:
+        """
+        Reconstruct BOQ rows from a native PageData object.
+        """
+        table_struct = self.structure_discovery.detect_table_header(page)
+        if not table_struct:
+            table_struct = active_structure
+
+        if not table_struct or not page.lines:
+            return [], active_structure
+
+        rows: List[BOQRow] = []
+        header_y1 = table_struct.header_y1 if table_struct.has_headers and table_struct.page_num == page.page_num else 40.0
+
+        current_item: Optional[BOQRow] = None
+        current_section_title = ""
+        current_section_code = ""
+
+        for line in page.lines:
+            if line.y1 <= header_y1:
+                continue
+
+            # Check for running headers, page numbers, carried-forwards
+            if self.structure_discovery.is_page_header_or_footer(line, page.height):
+                continue
+
+            # Map line words into columns
+            line_cells: Dict[str, List[str]] = {}
+            for w in line.words:
+                col = table_struct.find_column(w.x_center)
+                if col:
+                    line_cells.setdefault(col.name, []).append(w.text)
+
+            item_no_raw = " ".join(line_cells.get("item_no", [])).strip()
+            desc_raw = " ".join(line_cells.get("description", [])).strip()
+            qty_raw = " ".join(line_cells.get("quantity", [])).strip()
+            unit_raw = " ".join(line_cells.get("unit", [])).strip()
+            rate_raw = " ".join(line_cells.get("rate", [])).strip()
+            amt_raw = " ".join(line_cells.get("amount", [])).strip()
+
+            # If item_no was captured inside description column (common in single-anchor headers)
+            if not item_no_raw and desc_raw:
+                # Check if starts with item number e.g. "1 Trenches" or "1.2.3.1 Plastering"
+                m_item = re.match(r"^(\d+(?:[.\-]\d+)*\.?)\s+(.+)$", desc_raw)
+                if m_item:
+                    item_no_raw = m_item.group(1)
+                    desc_raw = m_item.group(2)
+
+            has_qty = self._is_number(qty_raw)
+            has_rate = self._is_number(rate_raw)
+            has_amt = self._is_number(amt_raw)
+            has_item_no = bool(item_no_raw) and bool(re.match(r"^\d+(?:[.\-]\d+)*\.?[A-Za-z]?$", item_no_raw))
+
+            # 1. Section Header Check
+            is_sec_candidate = (
+                not has_qty and not has_rate and not has_amt and not has_item_no and
+                bool(re.search(r"^(?:BILL\s+NO\.?|SECTION\s+NO\.?|TRADE\s*[\d\w.-]*|\d{4}\s+[A-Z])", desc_raw, re.I))
             )
-            all_rows.extend(page_rows)
+
+            if is_sec_candidate:
+                if current_item:
+                    rows.append(current_item)
+                    current_item = None
+
+                current_section_title = desc_raw
+                m_code = re.match(r"^(\d{4})\s+(.+)$", desc_raw)
+                if m_code:
+                    current_section_code = m_code.group(1)
+                    current_section_title = m_code.group(2).strip()
+
+                sec_row = BOQRow(
+                    description=desc_raw,
+                    section_code=current_section_code,
+                    section_title=current_section_title,
+                    is_section_header=True,
+                    page_num=page.page_num,
+                )
+                rows.append(sec_row)
+                continue
+
+            # 2. Priced line item or new item number start
+            if has_item_no:
+                # Flush previous item
+                if current_item:
+                    rows.append(current_item)
+
+                qty_val = self._to_float(qty_raw) if has_qty else None
+                rate_val = self._to_float(rate_raw) if has_rate else None
+                amt_val = self._to_float(amt_raw) if has_amt else None
+
+                current_item = BOQRow(
+                    item_no=self._clean_item_no(item_no_raw),
+                    description=desc_raw,
+                    quantity=qty_val,
+                    unit=unit_raw,
+                    rate=rate_val,
+                    net_rate=rate_val,
+                    gross_rate=rate_val,
+                    amount=amt_val,
+                    page_num=page.page_num,
+                    section_code=current_section_code,
+                    section_title=current_section_title,
+                )
+            elif (has_amt or has_rate or has_qty) and current_item and current_item.amount is None:
+                # Populate numbers into current item if not yet populated
+                if has_qty:
+                    current_item.quantity = self._to_float(qty_raw)
+                if unit_raw:
+                    current_item.unit = unit_raw
+                if has_rate:
+                    r_val = self._to_float(rate_raw)
+                    current_item.rate = r_val
+                    current_item.net_rate = r_val
+                    current_item.gross_rate = r_val
+                if has_amt:
+                    current_item.amount = self._to_float(amt_raw)
+                if desc_raw:
+                    current_item.description = (current_item.description + " " + desc_raw).strip()
+            elif has_amt or has_rate or has_qty:
+                # Numbered item without explicit item_no
+                if current_item:
+                    rows.append(current_item)
+
+                qty_val = self._to_float(qty_raw) if has_qty else None
+                rate_val = self._to_float(rate_raw) if has_rate else None
+                amt_val = self._to_float(amt_raw) if has_amt else None
+
+                current_item = BOQRow(
+                    item_no="",
+                    description=desc_raw,
+                    quantity=qty_val,
+                    unit=unit_raw,
+                    rate=rate_val,
+                    net_rate=rate_val,
+                    gross_rate=rate_val,
+                    amount=amt_val,
+                    page_num=page.page_num,
+                    section_code=current_section_code,
+                    section_title=current_section_title,
+                )
+            else:
+                # 3. Text continuation / wrapped description
+                if current_item and desc_raw:
+                    current_item.description = (current_item.description + " " + desc_raw).strip()
+
+        if current_item:
+            rows.append(current_item)
+
+        return rows, table_struct
+
+    # ── backwards compatibility wrapper for PageOCRResult ───────────────────
+
+    def reconstruct_all(self, ocr_results: List[Any]) -> List[BOQRow]:
+        """Convert list of PageOCRResult or PageData to BOQRows."""
+        all_rows: List[BOQRow] = []
+        for res in ocr_results:
+            # Handle native PageData
+            if isinstance(res, PageData):
+                page_rows, _ = self.reconstruct_page(res)
+                all_rows.extend(page_rows)
+            else:
+                # Convert OCRToken tokens into text lines and words
+                tokens = getattr(res, "tokens", [])
+                pnum = getattr(res, "page_num", 1)
+                words = [
+                    WordBox(
+                        x0=t.bbox[0], y0=t.bbox[1], x1=t.bbox[2], y1=t.bbox[3],
+                        text=t.text,
+                    )
+                    for t in tokens
+                ]
+                pdata = PageData(
+                    page_num=pnum,
+                    width=612.0,
+                    height=792.0,
+                    text=getattr(res, "raw_text", ""),
+                    words=words,
+                    lines=PDFProcessor._build_lines(words, pnum),
+                )
+                page_rows, _ = self.reconstruct_page(pdata)
+                all_rows.extend(page_rows)
 
         return all_rows

@@ -195,9 +195,10 @@ class Validator:
 
     def validate_section(self, section: Section) -> SectionValidation:
         """Validate the subtotal of a section against the sum of its item amounts."""
+        all_items = section.all_items() if hasattr(section, "all_items") else section.items
         computed = sum(
-            item.amount for item in section.items
-            if item.amount is not None and not item.is_subtotal_row
+            item.amount for item in all_items
+            if getattr(item, "amount", None) is not None and not getattr(item, "is_subtotal_row", False)
         )
 
         if section.subtotal is None:

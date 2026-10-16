@@ -261,13 +261,10 @@ class DomainCorrector:
         if not text or not text.strip():
             return text
 
-        # Phrase-level corrections first
-        lc_text = text.lower().strip()
+        # Phrase-level corrections first with word boundary protection
         for error, correction in self._corrections.items():
-            if error in lc_text:
-                # Case-insensitive replacement
-                pattern = re.compile(re.escape(error), re.IGNORECASE)
-                text = pattern.sub(correction, text)
+            pattern = re.compile(rf"\b{re.escape(error)}\b", re.IGNORECASE)
+            text = pattern.sub(correction, text)
 
         # Word-level fuzzy correction
         words = text.split()

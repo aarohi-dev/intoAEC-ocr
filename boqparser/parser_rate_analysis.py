@@ -81,7 +81,7 @@ class RateAnalysisParser:
         if len(nums) > 7: r["pct"] = nums[7]
         return r
 
-    def parse(self, pdf_path: str) -> Tuple[List[Section], List[BOQRow]]:
+    def parse(self, pdf_path: str, pages: Optional[List[int]] = None) -> Tuple[List[Section], List[BOQRow]]:
         """
         Parse the PDF and return sections tree and a flat list of work items.
         """
@@ -90,7 +90,8 @@ class RateAnalysisParser:
         
         # 1. Extract words and form lines, keeping track of page numbers
         all_lines: List[Tuple[str, int]] = []
-        for pg_idx in range(total_pages):
+        target_indices = [p - 1 for p in pages if 1 <= p <= total_pages] if pages is not None else list(range(total_pages))
+        for pg_idx in target_indices:
             page = doc[pg_idx]
             words = page.get_text("words")
             if not words:
@@ -321,6 +322,8 @@ class RateAnalysisParser:
                 new_sec = Section(
                     number=code,
                     title=title,
+                    section_code=code,
+                    section_title=title,
                     depth=depth,
                     items=[],
                     children=[],
@@ -340,20 +343,23 @@ class RateAnalysisParser:
                         section_stack = [new_sec]
 
             elif t_type == "work_item":
+                n_rate = self._parse_float(tok["net_rate"])
+                g_rate = self._parse_float(tok["gross_rate"])
                 current_wi = BOQRow(
                     item_no=tok["number"],
                     description=tok["description"],
                     quantity=self._parse_float(tok["qty"]),
                     unit=tok["unit"],
-                    rate=self._parse_float(tok["net_rate"]),
+                    rate=n_rate,
+                    net_rate=n_rate,
+                    gross_rate=g_rate if g_rate is not None else n_rate,
                     amount=self._parse_float(tok["amount"]),
                     page_num=tok["page_num"],
-                    groups=[]
+                    groups=[],
+                    materials=[],
                 )
                 
-                # Metadata / raw fields
                 current_wi.raw_cells = [tok["code"], tok["number"], tok["description"], tok["qty"], tok["unit"], tok["net_rate"], tok["gross_rate"], tok["amount"], tok["pct"]]
-                
                 all_rows.append(current_wi)
                 
                 if section_stack:
@@ -370,7 +376,18 @@ class RateAnalysisParser:
 
             elif t_type == "resource":
                 if current_grp is not None:
-                    current_grp["resources"].append(tok["row"])
+                    res_row = tok["row"]
+                    current_grp["resources"].append(res_row)
+                    if current_wi is not None:
+                        current_wi.materials.append({
+                            "material_id": res_row.get("id", ""),
+                            "description": res_row.get("name", ""),
+                            "unit": res_row.get("unit", ""),
+                            "quantity": self._parse_float(res_row.get("qty_wi")),
+                            "rate": self._parse_float(res_row.get("price")),
+                            "amount": self._parse_float(res_row.get("net_amt")),
+                            "group_name": current_grp.get("group_name", ""),
+                        })
 
             elif t_type == "note":
                 if current_wi is not None:

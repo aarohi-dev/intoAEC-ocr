@@ -1,209 +1,211 @@
 """
-Hierarchy Detector — builds a nested section tree from BOQ rows.
+Hierarchy Detector — reconstructs sections and items into a canonical hierarchy.
 
-Detects item numbering patterns like:
-  1
-  1.1
-  1.1.1
-  1.1.1.1
-  1A, 1.1A  (alphanumeric suffixes)
-
-Constructs a tree of Section nodes and assigns BOQ line items to the
-deepest matching section.
+Detects:
+- Section markers: 'BILL NO. 1', 'SECTION NO. 2', 'Bill No.1 Earthwork', 'FOUNDATION WORKS'
+- 4-digit codes: '0066', '0068', '1500', '1510'
+- Dot-notation hierarchies: 1 -> 1.1 -> 1.1.1
+- Assigns line items to their enclosing section
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from boqparser.table.table_reconstructor import BOQRow
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Section data type
-# ─────────────────────────────────────────────────────────────────────────────
-
 @dataclass
 class Section:
-    """A hierarchical section in a BOQ document."""
-    number: str                          # e.g. "1.1"
-    title: str                           # e.g. "FOUNDATION WORKS"
-    depth: int                           # 0 = top-level, 1 = sub, ...
+    """A hierarchical section in a construction document."""
+    section_code: str = ""
+    section_title: str = ""
+    number: str = ""                     # For backwards compatibility with older tests
+    title: str = ""                      # For backwards compatibility with older tests
+    depth: int = 0
     items: List[BOQRow] = field(default_factory=list)
     children: List["Section"] = field(default_factory=list)
     subtotal: Optional[float] = None
     page_num: int = 0
 
-    def to_dict(self) -> dict:
+    def __post_init__(self):
+        if not self.number and self.section_code:
+            self.number = self.section_code
+        if not self.title and self.section_title:
+            self.title = self.section_title
+        if not self.section_code and self.number:
+            self.section_code = self.number
+        if not self.section_title and self.title:
+            self.section_title = self.title
+
+    def all_items(self) -> List[BOQRow]:
+        """Recursively collect all line items across this section and its children."""
+        items = [it for it in self.items if not getattr(it, "is_header_row", False) and not getattr(it, "is_subtotal_row", False)]
+        for child in self.children:
+            items.extend(child.all_items())
+        return items
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Detailed legacy dictionary."""
         return {
-            "section": f"{self.number} {self.title}".strip(),
-            "number": self.number,
-            "title": self.title,
+            "section": f"{self.section_code} {self.section_title}".strip(),
+            "section_code": self.section_code,
+            "section_title": self.section_title,
+            "number": self.section_code,
+            "title": self.section_title,
             "depth": self.depth,
             "subtotal": self.subtotal,
             "items": [item.to_dict() for item in self.items],
             "children": [child.to_dict() for child in self.children],
         }
 
-    def all_items(self) -> List[BOQRow]:
-        """Recursively collect all items in this section and its children."""
-        items = list(self.items)
-        for child in self.children:
-            items.extend(child.all_items())
-        return items
+    def to_blueprint_dict(self) -> Dict[str, Any]:
+        """Convert to the exact dictionary expected by output.json."""
+        items_data = []
+        for it in self.all_items():
+            qty = getattr(it, "quantity", None)
+            net_rate = getattr(it, "net_rate", None)
+            if net_rate is None:
+                net_rate = getattr(it, "rate", None)
+            gross_rate = getattr(it, "gross_rate", None)
+            if gross_rate is None:
+                gross_rate = net_rate
+            amount = getattr(it, "amount", None)
 
+            items_data.append({
+                "item_no": str(getattr(it, "item_no", "") or ""),
+                "description": str(getattr(it, "description", "") or "").strip(),
+                "unit": str(getattr(it, "unit", "") or ""),
+                "quantity": float(qty) if qty is not None else None,
+                "net_rate": float(net_rate) if net_rate is not None else None,
+                "gross_rate": float(gross_rate) if gross_rate is not None else None,
+                "amount": float(amount) if amount is not None else None,
+                "materials": getattr(it, "materials", []) or [],
+            })
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Item number parsing
-# ─────────────────────────────────────────────────────────────────────────────
+        return {
+            "section_code": self.section_code or "0001",
+            "section_title": self.section_title or "General",
+            "items": items_data,
+        }
+
 
 # Matches: "1", "1.", "1.1", "1.1.", "1.1.1", "1.1.1.1", "1A", "1.1A"
-_ITEM_NO_RE = re.compile(
-    r"^(\d+(?:\.\d+)*[A-Za-z]?)\.?$"
-)
+_ITEM_NO_RE = re.compile(r"^(\d+(?:\.\d+)*[A-Za-z]?)\.?$")
 
 
 def _parse_depth(item_no: str) -> int:
-    """
-    Return the nesting depth of an item number.
-    "1"     → 0
-    "1.1"   → 1
-    "1.1.1" → 2
-    """
     m = _ITEM_NO_RE.match(item_no.strip())
     if not m:
         return -1
-    # Count dots
-    core = m.group(1)
-    return core.count(".")
+    return m.group(1).count(".")
 
-
-def _is_section_row(row: BOQRow) -> bool:
-    """
-    Heuristic: a row is a section header if:
-    - It has no numeric quantity/rate/amount, AND
-    - Its item_no matches a section-level pattern (0 or 1 dots), AND
-    - It has a non-empty description
-    """
-    no_numbers = (row.quantity is None and row.rate is None and row.amount is None)
-    has_item_no = bool(row.item_no.strip()) and _ITEM_NO_RE.match(row.item_no.strip())
-    has_description = bool(row.description.strip())
-    return bool(no_numbers and has_item_no and has_description)
-
-
-def _is_subtotal_row(row: BOQRow) -> bool:
-    return row.is_subtotal_row
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HierarchyDetector
-# ─────────────────────────────────────────────────────────────────────────────
 
 class HierarchyDetector:
     """
-    Builds a hierarchical section tree from a flat list of BOQRows.
-
-    Algorithm:
-    1. Scan rows in order.
-    2. When a section-header row is detected (item_no matches, no numeric values),
-       start a new Section node.
-    3. Assign subsequent item rows to the current deepest matching section.
-    4. Handle subtotal rows: store the amount in the parent section.
-    5. Return a list of top-level Section objects.
+    Builds section hierarchy and associates items with sections.
     """
 
     def __init__(self, max_depth: int = 4):
         self.max_depth = max_depth
 
-    # ── stack management ─────────────────────────────────────────────────────
-
-    def _find_parent(self, stack: List[Section], depth: int) -> Optional[Section]:
-        """Find the deepest section on the stack with depth < given depth."""
-        for sec in reversed(stack):
-            if sec.depth < depth:
-                return sec
-        return None
-
-    # ── public API ────────────────────────────────────────────────────────────
-
     def detect(self, rows: List[BOQRow]) -> List[Section]:
         """
         Build section tree from flat BOQRow list.
-
-        Returns:
-            List of top-level Section objects (depth=0).
         """
         roots: List[Section] = []
-        stack: List[Section] = []   # sections open at each depth level
-        current_section: Optional[Section] = None
+        stack: List[Tuple[int, Section]] = []
+        sec_counter = 1
 
         for row in rows:
-            if row.is_header_row:
+            if getattr(row, "is_header_row", False):
                 continue
 
-            item_no = row.item_no.strip()
-
-            # ── Detect section heading row ────────────────────────────────────
-            if item_no and _ITEM_NO_RE.match(item_no) and _is_section_row(row):
-                depth = _parse_depth(item_no)
+            # Check if this row represents a section header
+            is_sec = getattr(row, "is_section_header", False)
+            depth = -1
+            if is_sec:
+                depth = _parse_depth(row.item_no) if row.item_no else 0
                 if depth < 0:
                     depth = 0
+            elif (
+                row.quantity is None
+                and row.rate is None
+                and getattr(row, "net_rate", None) is None
+                and row.amount is None
+                and row.item_no
+                and _parse_depth(row.item_no) >= 0
+            ):
+                is_sec = True
+                depth = _parse_depth(row.item_no)
 
-                section = Section(
-                    number=item_no,
-                    title=row.description.strip(),
+            if is_sec:
+                code = row.section_code or row.item_no or f"{sec_counter:04d}"
+                title = row.section_title or row.description or f"Section {code}"
+                sec_counter += 1
+
+                new_sec = Section(
+                    section_code=code,
+                    section_title=title,
+                    number=code,
+                    title=title,
                     depth=depth,
                     page_num=row.page_num,
                 )
 
-                # Pop stack to depth level
-                while stack and stack[-1].depth >= depth:
+                while stack and stack[-1][0] >= depth:
                     stack.pop()
 
-                parent = self._find_parent(stack, depth)
-                if parent is not None:
-                    parent.children.append(section)
+                if not stack:
+                    roots.append(new_sec)
                 else:
-                    roots.append(section)
+                    stack[-1][1].children.append(new_sec)
 
-                stack.append(section)
-                current_section = section
+                stack.append((depth, new_sec))
+                continue
 
-            # ── Subtotal row ──────────────────────────────────────────────────
-            elif _is_subtotal_row(row):
-                if current_section is not None and row.amount is not None:
-                    current_section.subtotal = row.amount
-                # Also add as item for visibility
-                if current_section is not None:
-                    row.is_subtotal_row = True
-                    current_section.items.append(row)
+            # Subtotal row
+            if getattr(row, "is_subtotal_row", False):
+                if stack and row.amount is not None:
+                    stack[-1][1].subtotal = row.amount
+                continue
 
-            # ── Normal line item ──────────────────────────────────────────────
-            else:
-                if current_section is not None:
-                    current_section.items.append(row)
-                else:
-                    # Orphan items — create a default root section
-                    if not roots or roots[-1].number != "0":
-                        default_sec = Section(number="0", title="General", depth=0)
-                        roots.append(default_sec)
-                        stack = [default_sec]
-                        current_section = default_sec
-                    current_section.items.append(row)  # type: ignore[union-attr]
+            # Normal line item
+            if not stack:
+                default_sec = Section(
+                    section_code=f"{sec_counter:04d}",
+                    section_title="BILL NO. 1",
+                    number=f"{sec_counter:04d}",
+                    title="BILL NO. 1",
+                    depth=0,
+                    page_num=row.page_num,
+                )
+                sec_counter += 1
+                roots.append(default_sec)
+                stack.append((0, default_sec))
 
-        return roots
+            stack[-1][1].items.append(row)
+
+        def _clean_section(sec: Section) -> Optional[Section]:
+            sec.children = [c for c in (_clean_section(ch) for ch in sec.children) if c is not None]
+            if sec.items or sec.children:
+                return sec
+            return None
+
+        clean_roots = [s for s in (_clean_section(r) for r in roots) if s is not None]
+        return clean_roots if clean_roots else roots
 
     def flatten(self, sections: List[Section]) -> List[BOQRow]:
-        """Return all items in reading order from the section tree."""
+        """Return all items from section tree."""
         items: List[BOQRow] = []
         for sec in sections:
             items.extend(sec.all_items())
         return items
 
     def get_all_sections(self, roots: List[Section]) -> List[Section]:
-        """Flatten section tree into depth-first list."""
+        """Flatten section tree into list."""
         result: List[Section] = []
 
         def _dfs(sections: List[Section]):
