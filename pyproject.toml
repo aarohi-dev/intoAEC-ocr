@@ -54,7 +54,7 @@ boqparse = "boqparser.cli:main"
 gpu = [
     "torch>=2.7.0",
     "transformers==4.57.3",
-    "vllm==0.11.2"
+    "vllm==0.28.0"
 ]
 
 beaker = [
