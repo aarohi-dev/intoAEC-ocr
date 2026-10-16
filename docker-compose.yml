@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  intoaec-ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: intoaec-ocr:latest
+    container_name: intoaec-ocr
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "11434:11434"
+    volumes:
+      # Cache Ollama models so they persist between runs
+      - ollama_cache:/root/.ollama
+      # Sync output.json with host machine
+      - ./output.json:/app/output.json
+    environment:
+      - OLLAMA_MODEL=qwen2.5:1.5b
+      - BOQPARSER_TOLERANCE=0.02
+      - BOQPARSER_DPI=300
+
+volumes:
+  ollama_cache:
+    name: intoaec_ollama_cache

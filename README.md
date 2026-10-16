@@ -92,42 +92,46 @@ Inspect document metadata and table headers:
 python -m boqparser.cli inspect "test_documents/Rev.Report 5 - Rate analyis.pdf"
 ```
 
-### Web API & Interactive UI
+### Docker Deployment (One-Command on Any Laptop)
 
-Start the local FastAPI application:
+The entire application—including the **Ollama AI runtime**, **Qwen2.5 (1.5B) model**, and **Web Dashboard**—is fully containerized.
+
+#### Option 1: Docker Compose (Recommended)
 ```bash
-python -m boqparser.api.app
-# or
-uvicorn boqparser.api.app:app --host 127.0.0.1 --port 8080
+docker compose up -d
+```
+- Automatically builds the image, starts Ollama, verifies/pulls `qwen2.5:1.5b`, and starts the web service.
+- Open **`http://localhost:8000`** in any browser.
+
+#### Option 2: Docker Run
+```bash
+docker build -t intoaec-ocr .
+docker run -d -p 8000:8000 -p 11434:11434 --name intoaec-ocr intoaec-ocr
 ```
 
-- **Interactive UI**: Open `http://localhost:8080` in your web browser.
-  - Drag and drop PDFs.
-  - Preview extracted sections, items, and material breakdowns.
-  - Download formatted JSON (`output.json` contract) or Excel.
+---
+
+### Local Python Execution
+
+Start the local server directly:
+```bash
+python app.py
+```
+- Open **`http://localhost:8000`** in your browser.
 - **REST Endpoints**:
   - `POST /extract`: Upload PDF and receive validated blueprint JSON.
   - `POST /extract/html`: Upload PDF and receive rendered HTML report.
-  - `GET /health`: Health check endpoint.
-
-### Standalone Rate Analysis HTML Generator
-
-To generate the standalone self-contained HTML report:
-```bash
-python generate_report_html.py "test_documents/Rev.Report 5 - Rate analyis.pdf"
-```
+  - `POST /extract/excel`: Download `.xlsx` spreadsheet.
+  - `POST /api/save_json`: Save validated schema directly to project root `output.json`.
+  - `GET /health`: Health and Ollama connectivity status.
 
 ---
 
 ## 4. Running Tests
 
-The test suite includes 90 unit, integration, and end-to-end regression tests across all sample documents:
+The test suite includes 91 comprehensive unit, integration, and mathematical reconciliation tests:
 
 ```bash
-pytest tests/boqparser
+pytest
 ```
 
-Or via unittest:
-```bash
-python -m unittest discover tests/boqparser
-```
