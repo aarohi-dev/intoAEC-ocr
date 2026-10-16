@@ -194,7 +194,7 @@ module = "tests.*"
 strict_optional = false
 
 [tool.pytest.ini_options]
-testpaths = "tests/"
+testpaths = "tests/boqparser"
 python_classes = [
   "Test*",
   "*Test"

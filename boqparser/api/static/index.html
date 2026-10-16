@@ -1406,6 +1406,54 @@
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
+
+        /* Button loading animation */
+        .btn-loading {
+            position: relative;
+            pointer-events: none;
+            opacity: 0.85;
+        }
+        .btn-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            border-top: 2px solid #FFFFFF;
+            border-radius: 50%;
+            animation: btnSpin 0.7s linear infinite;
+            vertical-align: middle;
+        }
+        @keyframes btnSpin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Floating Export Progress Pill */
+        .export-loader-banner {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: rgba(17, 26, 46, 0.95);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(37, 99, 235, 0.45);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(37, 99, 235, 0.25);
+            color: #FFFFFF;
+            padding: 0.75rem 1.4rem;
+            border-radius: 2rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            z-index: 1000;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .export-loader-banner.show {
+            display: flex;
+            transform: translateX(-50%) translateY(0);
+        }
     </style>
 </head>
 <body>
@@ -1429,7 +1477,7 @@
         </div>
 
         <div class="header-actions">
-            <button class="btn-header-quick-download" id="header-download-btn" onclick="downloadBlueprintJson()">
+            <button class="btn-header-quick-download" id="header-download-btn" onclick="downloadBlueprintJson(this)">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 <span>Export output.json</span>
             </button>
@@ -1467,15 +1515,10 @@
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="server-url">OCR / VLM Server URL</label>
-                    <input type="text" id="server-url" class="form-control" value="http://localhost:8000/v1">
-                </div>
-
-                <div class="form-group">
-                    <div class="checkbox-group" id="fallback-checkbox-container">
-                        <input type="checkbox" id="fallback-mode">
-                        <label for="fallback-mode" style="margin-bottom:0; cursor:pointer; font-size:0.8rem;">Native PDF Layout Mode</label>
+                <div class="form-group" style="padding: 0.65rem 0.85rem; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
+                    <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">Extraction Core</div>
+                    <div style="font-size: 0.825rem; font-weight: 600; color: #FFFFFF; margin-top: 0.2rem; display: flex; align-items: center; gap: 0.45rem;">
+                        <span style="color: #34D399;">⚡</span> Native Vector PDF Engine
                     </div>
                 </div>
 
@@ -1514,11 +1557,11 @@
                             <div style="font-size:0.72rem; color:var(--text-secondary);">Authoritative Construction Contract Schema</div>
                         </div>
                     </div>
-                    <button class="btn-export-primary" onclick="downloadBlueprintJson()" id="btn-download-blueprint">
+                    <button class="btn-export-primary" onclick="downloadBlueprintJson(this)" id="btn-download-blueprint">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         Download Final JSON (output.json)
                     </button>
-                    <button class="btn-export-save" onclick="saveJsonToServer()" id="btn-save-root">
+                    <button class="btn-export-save" onclick="saveJsonToServer(this)" id="btn-save-root">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                         Save Directly to Server Root
                     </button>
@@ -1526,28 +1569,28 @@
 
                 <h3 style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:0.5rem; font-weight:700;">Secondary Formats</h3>
                 <div class="export-formats-grid">
-                    <button class="export-format-btn" onclick="downloadFormat('excel')">
+                    <button class="export-format-btn" id="btn-export-excel" onclick="downloadFormat('excel', this)">
                         <span class="fmt-icon" style="color:#10B981;">📊</span>
                         <div class="fmt-meta">
                             <span class="fmt-title">Excel</span>
                             <span class="fmt-ext">.xlsx</span>
                         </div>
                     </button>
-                    <button class="export-format-btn" onclick="downloadFormat('csv')">
+                    <button class="export-format-btn" id="btn-export-csv" onclick="downloadFormat('csv', this)">
                         <span class="fmt-icon" style="color:#60A5FA;">📑</span>
                         <div class="fmt-meta">
                             <span class="fmt-title">CSV</span>
                             <span class="fmt-ext">.csv</span>
                         </div>
                     </button>
-                    <button class="export-format-btn" onclick="downloadFormat('markdown')">
+                    <button class="export-format-btn" id="btn-export-markdown" onclick="downloadFormat('markdown', this)">
                         <span class="fmt-icon" style="color:#A78BFA;">📝</span>
                         <div class="fmt-meta">
                             <span class="fmt-title">Markdown</span>
                             <span class="fmt-ext">.md</span>
                         </div>
                     </button>
-                    <button class="export-format-btn" onclick="openHtmlReport()">
+                    <button class="export-format-btn" id="btn-export-report" onclick="openHtmlReport(this)">
                         <span class="fmt-icon" style="color:#F59E0B;">🌐</span>
                         <div class="fmt-meta">
                             <span class="fmt-title">Interactive</span>
@@ -1812,6 +1855,12 @@
 
     <div class="toast-container" id="toast-container"></div>
 
+    <!-- Floating Export Progress Pill -->
+    <div class="export-loader-banner" id="export-loader-banner">
+        <div class="btn-spinner" style="width:16px; height:16px; border-width:2.5px; border-top-color:#60A5FA;"></div>
+        <span id="export-loader-text">Preparing export, please wait...</span>
+    </div>
+
     <script>
         let currentFile = null;
         let currentParseResult = null;
@@ -1842,12 +1891,6 @@
                     } else {
                         badge.innerHTML = `<span style="color:#F59E0B; font-weight:500;">⚠️ Ollama offline at ${data.ollama_host || 'localhost:11434'} (runs heuristic mode)</span>`;
                     }
-                }
-                
-                if (data.olmocr_server_reachable) {
-                    document.getElementById('server-url').value = data.olmocr_server;
-                } else {
-                    document.getElementById('fallback-mode').checked = true;
                 }
             } catch (err) {
                 dot.className = 'status-dot';
@@ -1912,10 +1955,10 @@
 
             const formData = new FormData();
             formData.append('file', currentFile);
-            formData.append('fallback', document.getElementById('fallback-mode').checked);
+            formData.append('fallback', 'true');
             formData.append('tolerance', document.getElementById('tolerance').value);
             formData.append('dpi', document.getElementById('dpi-range').value);
-            formData.append('server_url', document.getElementById('server-url').value);
+            formData.append('server_url', 'http://localhost:8000/v1');
             formData.append('use_llm', document.getElementById('use-llm').checked);
             formData.append('ollama_host', document.getElementById('ollama-host').value);
             formData.append('ollama_model', document.getElementById('ollama-model').value);
@@ -2533,43 +2576,86 @@
             };
         }
 
+        // Floating download / export loader banner helper
+        function setExportLoading(loading, message = 'Preparing download...') {
+            const banner = document.getElementById('export-loader-banner');
+            const text = document.getElementById('export-loader-text');
+            if (!banner) return;
+            if (loading) {
+                if (text) text.textContent = message;
+                banner.style.display = 'flex';
+                requestAnimationFrame(() => banner.classList.add('show'));
+            } else {
+                banner.classList.remove('show');
+                setTimeout(() => { banner.style.display = 'none'; }, 250);
+            }
+        }
+
         // Download Final Blueprint JSON (output.json) & Sync with Server
-        async function downloadBlueprintJson() {
-            const blueprint = buildBlueprintJson();
-            const jsonStr = JSON.stringify(blueprint, null, 2);
+        async function downloadBlueprintJson(triggerBtn = null) {
+            setExportLoading(true, 'Generating output.json blueprint...');
+            const btn = (triggerBtn && triggerBtn.classList) ? triggerBtn : document.getElementById('btn-download-blueprint');
+            let origHtml = '';
+            if (btn) {
+                origHtml = btn.innerHTML;
+                btn.classList.add('btn-loading');
+                btn.innerHTML = `<div class="btn-spinner" style="margin-right:0.4rem;"></div><span>Exporting output.json...</span>`;
+            }
 
-            // Client browser trigger download
-            const blob = new Blob([jsonStr], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'output.json';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-
-            // Sync with server root output.json
             try {
-                const res = await fetch('/api/save_json', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: jsonStr
-                });
-                if (res.ok) {
-                    showToast('✓ output.json downloaded & synchronized to project root!', 'success');
-                } else {
-                    showToast('✓ output.json downloaded successfully!', 'info');
+                const blueprint = buildBlueprintJson();
+                const jsonStr = JSON.stringify(blueprint, null, 2);
+
+                // Client browser trigger download
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'output.json';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+
+                // Sync with server root output.json
+                try {
+                    const res = await fetch('/api/save_json', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: jsonStr
+                    });
+                    if (res.ok) {
+                        showToast('✓ output.json downloaded & synchronized to project root!', 'success');
+                    } else {
+                        showToast('✓ output.json downloaded successfully!', 'info');
+                    }
+                } catch (err) {
+                    showToast('✓ output.json downloaded successfully!', 'success');
                 }
             } catch (err) {
-                showToast('✓ output.json downloaded successfully!', 'success');
+                showToast(`Download failed: ${err.message}`, 'danger');
+            } finally {
+                setExportLoading(false);
+                if (btn) {
+                    btn.classList.remove('btn-loading');
+                    btn.innerHTML = origHtml;
+                }
             }
         }
 
         // Save directly to server output.json
-        async function saveJsonToServer() {
-            const blueprint = buildBlueprintJson();
+        async function saveJsonToServer(triggerBtn = null) {
+            setExportLoading(true, 'Saving output.json directly to server project root...');
+            const btn = (triggerBtn && triggerBtn.classList) ? triggerBtn : document.getElementById('btn-save-root');
+            let origHtml = '';
+            if (btn) {
+                origHtml = btn.innerHTML;
+                btn.classList.add('btn-loading');
+                btn.innerHTML = `<div class="btn-spinner" style="margin-right:0.4rem;"></div><span>Saving to root...</span>`;
+            }
+
             try {
+                const blueprint = buildBlueprintJson();
                 const res = await fetch('/api/save_json', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2583,6 +2669,12 @@
                 }
             } catch (err) {
                 showToast(`Save error: ${err.message}`, 'danger');
+            } finally {
+                setExportLoading(false);
+                if (btn) {
+                    btn.classList.remove('btn-loading');
+                    btn.innerHTML = origHtml;
+                }
             }
         }
 
@@ -2794,13 +2886,32 @@
             document.getElementById('html-report-frame').srcdoc = '';
         }
 
-        // Download in specific format
-        async function downloadFormat(fmt) {
-            if (!currentFile) return;
+        // Download in specific format with real-time loading feedback
+        async function downloadFormat(fmt, triggerBtn = null) {
+            if (!currentFile) {
+                showToast('Please upload a PDF document first.', 'warning');
+                return;
+            }
             
+            const btn = (triggerBtn && triggerBtn.classList) ? triggerBtn : document.getElementById(`btn-export-${fmt}`);
+            let origHtml = '';
+            if (btn) {
+                origHtml = btn.innerHTML;
+                btn.classList.add('btn-loading');
+                btn.innerHTML = `<div class="btn-spinner" style="margin: auto 0.35rem;"></div><div class="fmt-meta"><span class="fmt-title">Generating...</span><span class="fmt-ext">Please wait</span></div>`;
+            }
+
+            const formatNames = {
+                'excel': 'Excel Spreadsheet (.xlsx)',
+                'csv': 'CSV Data Table (.csv)',
+                'markdown': 'Markdown Document (.md)'
+            };
+            const label = formatNames[fmt] || fmt.toUpperCase();
+            setExportLoading(true, `Generating ${label}, please wait...`);
+
             const formData = new FormData();
             formData.append('file', currentFile);
-            formData.append('fallback', document.getElementById('fallback-mode').checked);
+            formData.append('fallback', 'true');
             formData.append('tolerance', document.getElementById('tolerance').value);
             
             try {
@@ -2809,7 +2920,7 @@
                     body: formData
                 });
 
-                if (!response.ok) throw new Error('Download failed');
+                if (!response.ok) throw new Error(`Server returned ${response.status}: Download failed`);
 
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
@@ -2821,17 +2932,39 @@
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
+                window.URL.revokeObjectURL(url);
+                showToast(`✓ ${label} downloaded successfully!`, 'success');
             } catch (err) {
                 showToast(`Export error: ${err.message}`, 'danger');
+            } finally {
+                setExportLoading(false);
+                if (btn) {
+                    btn.classList.remove('btn-loading');
+                    btn.innerHTML = origHtml;
+                }
             }
         }
 
-        // Open beautiful HTML report in new tab
-        async function openHtmlReport() {
-            if (!currentFile) return;
+        // Open beautiful HTML report in new tab with loading feedback
+        async function openHtmlReport(triggerBtn = null) {
+            if (!currentFile) {
+                showToast('Please upload a PDF document first.', 'warning');
+                return;
+            }
             
+            const btn = (triggerBtn && triggerBtn.classList) ? triggerBtn : document.getElementById('btn-export-report');
+            let origHtml = '';
+            if (btn) {
+                origHtml = btn.innerHTML;
+                btn.classList.add('btn-loading');
+                btn.innerHTML = `<div class="btn-spinner" style="margin: auto 0.35rem;"></div><div class="fmt-meta"><span class="fmt-title">Rendering...</span><span class="fmt-ext">Please wait</span></div>`;
+            }
+
+            setExportLoading(true, 'Generating Interactive HTML Report, opening in new window...');
             const formData = new FormData();
             formData.append('file', currentFile);
+            formData.append('fallback', 'true');
+            formData.append('tolerance', document.getElementById('tolerance').value);
             
             try {
                 const newWindow = window.open();
@@ -2839,7 +2972,7 @@
                     showToast('Pop-up blocked! Please allow popups for this site.', 'warning');
                     return;
                 }
-                newWindow.document.write('<h3>Generating HTML report, please wait...</h3>');
+                newWindow.document.write('<div style="font-family:sans-serif; padding:2rem; background:#090D16; color:#93C5FD; min-height:100vh;"><h3>Generating Interactive HTML report, please wait...</h3></div>');
                 
                 const response = await fetch(`/extract/html`, {
                     method: 'POST',
@@ -2852,8 +2985,15 @@
                 newWindow.document.open();
                 newWindow.document.write(htmlText);
                 newWindow.document.close();
+                showToast('✓ Interactive Report opened successfully!', 'success');
             } catch (err) {
                 showToast(`HTML Generation error: ${err.message}`, 'danger');
+            } finally {
+                setExportLoading(false);
+                if (btn) {
+                    btn.classList.remove('btn-loading');
+                    btn.innerHTML = origHtml;
+                }
             }
         }
     </script>
