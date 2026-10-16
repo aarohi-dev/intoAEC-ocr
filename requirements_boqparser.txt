@@ -16,7 +16,7 @@ click>=8.1.7
 rapidfuzz>=3.9.0
 
 # HTML table parsing (for olmocr v4 HTML table output)
-lxml>=5.2.0
+lxml>=6.1.2
 
 # YAML (already in olmocr, but listed for clarity)
 PyYAML>=6.0
