@@ -19,7 +19,7 @@ rapidfuzz>=3.9.0
 lxml>=5.2.0
 
 # YAML (already in olmocr, but listed for clarity)
-PyYAML>=6.0
+PyYAML>=6.0.3
 
 # Core Native Extraction & LLM
 pymupdf>=1.23.0
