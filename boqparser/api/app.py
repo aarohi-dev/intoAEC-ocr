@@ -15,11 +15,12 @@ from __future__ import annotations
 import io
 import logging
 import os
+import json
 import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse, HTMLResponse
 
@@ -77,19 +78,40 @@ async def serve_ui():
 
 @app.get("/health")
 async def health():
-    """Health check — tests olmocr server connectivity."""
+    """Health check — tests olmocr and Ollama server connectivity."""
     parser = _get_parser()
     server_ok = parser.ocr_adapter.check_server()
+    
+    ollama_ok = False
+    try:
+        from boqparser.mapping.ollama_adapter import OllamaAdapter
+        ollama_ok = OllamaAdapter().is_available()
+    except Exception:
+        pass
+        
     return {
         "status": "ok",
         "olmocr_server": parser.ocr_adapter.server_url,
         "olmocr_server_reachable": server_ok,
         "ocr_mode": "vlm" if server_ok else "fallback (pypdfium2)",
+        "ollama_connected": ollama_ok,
+        "ollama_model": "qwen2.5:1.5b",
+        "ollama_host": "http://localhost:11434",
         "version": "1.0.0",
     }
 
 
-async def _run_extraction_task(task_id: str, pdf_path: str, fallback: bool, tolerance: float, dpi: int, server_url: Optional[str]):
+async def _run_extraction_task(
+    task_id: str,
+    pdf_path: str,
+    fallback: bool,
+    tolerance: float,
+    dpi: int,
+    server_url: Optional[str],
+    use_llm: bool = True,
+    ollama_model: str = "qwen2.5:1.5b",
+    ollama_host: str = "http://localhost:11434"
+):
     from boqparser.api.task_manager import TaskManager
     tm = TaskManager()
     try:
@@ -100,6 +122,9 @@ async def _run_extraction_task(task_id: str, pdf_path: str, fallback: bool, tole
             fallback_mode=fallback,
             dpi=dpi,
             tolerance=tolerance,
+            use_llm=use_llm,
+            ollama_model=ollama_model,
+            ollama_host=ollama_host,
             task_manager=tm,
             pdf_hash=pdf_hash,
         )
@@ -155,6 +180,9 @@ async def extract(
     tolerance: float = Form(0.02),
     dpi: int = Form(300),
     async_mode: bool = Form(False),
+    use_llm: bool = Form(True),
+    ollama_model: str = Form("qwen2.5:1.5b"),
+    ollama_host: str = Form("http://localhost:11434"),
 ):
     """
     Parse a PDF. If async_mode is True, runs as a background task returning a task_id.
@@ -175,7 +203,10 @@ async def extract(
             fallback=fallback,
             tolerance=tolerance,
             dpi=dpi,
-            server_url=server_url
+            server_url=server_url,
+            use_llm=use_llm,
+            ollama_model=ollama_model,
+            ollama_host=ollama_host,
         )
         return JSONResponse(
             status_code=202,
@@ -193,6 +224,9 @@ async def extract(
             fallback_mode=fallback,
             dpi=dpi,
             tolerance=tolerance,
+            use_llm=use_llm,
+            ollama_model=ollama_model,
+            ollama_host=ollama_host,
             task_manager=tm,
             pdf_hash=pdf_hash,
         )
@@ -292,6 +326,33 @@ async def resume_task(
         status_code=202,
         content={"task_id": task_id, "status": "processing", "progress": 0}
     )
+
+
+@app.post("/api/save_json")
+async def save_edited_json(request: Request):
+    """
+    Save manually edited blueprint JSON from frontend to output.json in the workspace root.
+    """
+    try:
+        data = await request.json()
+        from boqparser.schemas.output_schema import OutputSchemaValidator
+        is_valid, errors = OutputSchemaValidator.validate_dict(data)
+        
+        workspace_root = Path(__file__).resolve().parents[2]
+        out_file = workspace_root / "output.json"
+        with open(out_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            
+        return JSONResponse(content={
+            "status": "success",
+            "valid": is_valid,
+            "errors": errors if not is_valid else [],
+            "saved_path": str(out_file),
+            "message": "Successfully saved to output.json",
+        })
+    except Exception as e:
+        logger.exception(f"save_edited_json failed: {e}")
+        return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
 
 
 @app.post("/extract/json")
