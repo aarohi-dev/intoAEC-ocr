@@ -3,31 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BOQ Parser AI — Construction Document Intelligence</title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>intoAEC • Construction BOQ Intelligence Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-base: #0B0F19;
-            --bg-surface: #131B2E;
-            --bg-surface-elevated: #1B2640;
-            --bg-card-subtle: #162035;
-            --brand-primary: #3B82F6;
-            --brand-primary-hover: #2563EB;
+            /* Enterprise Obsidian Palette */
+            --bg-base: #090D16;
+            --bg-surface: #0F172A;
+            --bg-surface-elevated: #152037;
+            --bg-surface-card: #111A2E;
+            --bg-surface-hover: #1A2844;
+            --bg-input: #0B111F;
+
+            /* Professional Engineering Brand Colors */
+            --brand-primary: #2563EB;
+            --brand-primary-hover: #1D4ED8;
             --brand-primary-light: #60A5FA;
+            --brand-primary-glow: rgba(37, 99, 235, 0.25);
+
+            /* Financial & Verification Status Tokens */
             --brand-success: #10B981;
+            --brand-success-bg: rgba(16, 185, 129, 0.1);
+            --brand-success-border: rgba(16, 185, 129, 0.3);
+            
             --brand-warning: #F59E0B;
+            --brand-warning-bg: rgba(245, 158, 11, 0.1);
+            --brand-warning-border: rgba(245, 158, 11, 0.3);
+
             --brand-danger: #EF4444;
-            --text-primary: #F8FAFC;
+            --brand-danger-bg: rgba(239, 68, 68, 0.08);
+            --brand-danger-border: rgba(239, 68, 68, 0.25);
+
+            /* Typography */
+            --text-primary: #FFFFFF;
             --text-secondary: #94A3B8;
             --text-muted: #64748B;
-            --border-color: rgba(255, 255, 255, 0.09);
-            --border-color-focus: rgba(59, 130, 246, 0.5);
-            --font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
-            --font-mono: 'JetBrains Mono', Consolas, monospace;
-            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
-            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
-            --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.35);
-            --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --text-accent: #93C5FD;
+
+            /* Borders and Shadows */
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-color-subtle: rgba(255, 255, 255, 0.04);
+            --border-color-focus: rgba(37, 99, 235, 0.5);
+            --border-radius-sm: 0.375rem;
+            --border-radius: 0.625rem;
+            --border-radius-lg: 0.875rem;
+            
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+            --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.35);
+            --shadow-elevated: 0 12px 36px rgba(0, 0, 0, 0.5);
+            --shadow-primary: 0 4px 16px rgba(37, 99, 235, 0.35);
+
+            --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', Consolas, Monaco, monospace;
+            --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         * {
@@ -36,8 +66,11 @@
             padding: 0;
         }
 
-        body {
+        html, body {
             background-color: var(--bg-base);
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(37, 99, 235, 0.08) 0%, rgba(9, 13, 22, 0) 65%),
+                radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.04) 0%, rgba(9, 13, 22, 0) 50%);
             color: var(--text-primary);
             font-family: var(--font-family);
             line-height: 1.5;
@@ -45,79 +78,131 @@
             display: flex;
             flex-direction: column;
             overflow-x: hidden;
+            width: 100%;
         }
 
-        /* Scrollbar styling */
+        /* Sleek Scrollbar */
         ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
         }
         ::-webkit-scrollbar-track {
-            background: var(--bg-base);
+            background: rgba(9, 13, 22, 0.8);
         }
         ::-webkit-scrollbar-thumb {
-            background: var(--border-color);
+            background: rgba(255, 255, 255, 0.12);
             border-radius: 4px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: var(--brand-primary);
+            background: rgba(255, 255, 255, 0.25);
         }
 
+        /* Top Executive Navigation Bar */
         header {
-            background-color: rgba(21, 29, 48, 0.8);
-            backdrop-filter: blur(12px);
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border-bottom: 1px solid var(--border-color);
             position: sticky;
             top: 0;
-            z-index: 50;
-            padding: 1.25rem 2rem;
+            z-index: 100;
+            padding: 0.85rem 2rem;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 1.5rem;
         }
 
-        .logo-container {
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            text-decoration: none;
+        }
+
+        .brand-badge {
+            width: 2.35rem;
+            height: 2.35rem;
+            background: linear-gradient(135deg, #2563EB, #1D4ED8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.15rem;
+            color: #FFFFFF;
+            box-shadow: 0 0 16px rgba(37, 99, 235, 0.4);
+        }
+
+        .brand-text h1 {
+            font-size: 1.1rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: #FFFFFF;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .brand-text h1 span.accent {
+            color: #38BDF8;
+            font-weight: 700;
+        }
+
+        .brand-text p {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+
+        .header-center-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .doc-active-chip {
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(37, 99, 235, 0.12);
+            border: 1px solid rgba(37, 99, 235, 0.3);
+            color: #93C5FD;
+            padding: 0.3rem 0.75rem;
+            border-radius: 2rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+
+        .doc-active-chip .doc-name {
+            color: #FFFFFF;
+            max-width: 240px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .header-actions {
             display: flex;
             align-items: center;
             gap: 0.75rem;
         }
 
-        .logo-icon {
-            width: 2.25rem;
-            height: 2.25rem;
-            background: linear-gradient(135deg, var(--brand-primary), #10B981);
-            border-radius: 0.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            color: white;
-            box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
-        }
-
-        .logo-text h1 {
-            font-size: 1.25rem;
-            font-weight: 700;
-            background: linear-gradient(to right, #FFFFFF, var(--text-secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .logo-text p {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
-
         .status-badge {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
-            background-color: var(--bg-surface-elevated);
+            gap: 0.55rem;
+            background: rgba(255, 255, 255, 0.04);
             border: 1px solid var(--border-color);
-            padding: 0.375rem 0.875rem;
-            border-radius: 9999px;
-            font-size: 0.875rem;
-            font-weight: 500;
+            padding: 0.35rem 0.75rem;
+            border-radius: 2rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
         }
 
         .status-dot {
@@ -126,103 +211,157 @@
             border-radius: 50%;
             background-color: var(--brand-warning);
             box-shadow: 0 0 8px var(--brand-warning);
+            transition: var(--transition);
         }
 
         .status-dot.online {
             background-color: var(--brand-success);
             box-shadow: 0 0 8px var(--brand-success);
+            animation: pulseDot 2.2s infinite;
         }
 
+        @keyframes pulseDot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.2); }
+        }
+
+        .btn-header-quick-download {
+            display: none;
+            align-items: center;
+            gap: 0.45rem;
+            background: linear-gradient(135deg, #2563EB, #1D4ED8);
+            border: 1px solid #3B82F6;
+            color: #FFFFFF;
+            padding: 0.4rem 0.85rem;
+            border-radius: 0.45rem;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+        }
+        .btn-header-quick-download:hover {
+            background: #1D4ED8;
+            transform: translateY(-1px);
+        }
+
+        /* Main Layout Grid - STRICT OVERFLOW CONTAINMENT */
         main {
             flex: 1;
-            padding: 2rem;
-            max-width: 1400px;
+            padding: 1.75rem 2rem;
+            max-width: 1720px;
             width: 100%;
             margin: 0 auto;
             display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 2rem;
+            grid-template-columns: 330px minmax(0, 1fr);
+            gap: 1.75rem;
+            box-sizing: border-box;
         }
 
-        @media (max-width: 1024px) {
+        @media (max-width: 1180px) {
             main {
                 grid-template-columns: 1fr;
+                padding: 1.25rem;
             }
         }
 
-        /* Cards and Sections */
-        .card {
-            background-color: var(--bg-surface);
-            border: 1px solid var(--border-color);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            box-shadow: var(--shadow-lg);
-            transition: var(--transition);
-        }
-
-        .card:hover {
-            border-color: rgba(59, 130, 246, 0.4);
-        }
-
-        .section-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 1.25rem;
-            color: white;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 0.75rem;
-        }
-
-        /* Sidebar Settings */
+        /* Sidebar Container */
         .sidebar {
             display: flex;
             flex-direction: column;
-            gap: 1.5rem;
+            gap: 1.25rem;
+            min-width: 0;
         }
 
+        /* Right Content Panel - STRICT OVERFLOW CONTAINMENT */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            min-width: 0;
+            max-width: 100%;
+            width: 100%;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        /* Enterprise Cards */
+        .card {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 1.35rem;
+            box-shadow: var(--shadow-card);
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .card-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding-bottom: 0.65rem;
+            border-bottom: 1px solid var(--border-color-subtle);
+        }
+
+        .section-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #FFFFFF;
+            letter-spacing: -0.01em;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Form Controls */
         .form-group {
-            margin-bottom: 1.25rem;
+            margin-bottom: 1.1rem;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
         }
 
         .form-group label {
             display: block;
-            font-size: 0.875rem;
+            font-size: 0.8rem;
             color: var(--text-secondary);
-            margin-bottom: 0.5rem;
-            font-weight: 500;
+            margin-bottom: 0.4rem;
+            font-weight: 600;
         }
 
         .form-control {
             width: 100%;
-            background-color: var(--bg-base);
+            background-color: var(--bg-input);
             border: 1px solid var(--border-color);
-            color: white;
-            padding: 0.75rem 1rem;
-            border-radius: 0.5rem;
+            color: #FFFFFF;
+            padding: 0.65rem 0.85rem;
+            border-radius: var(--border-radius-sm);
             font-family: var(--font-family);
-            font-size: 0.875rem;
+            font-size: 0.825rem;
             outline: none;
             transition: var(--transition);
+            box-sizing: border-box;
         }
 
         .form-control:focus {
             border-color: var(--brand-primary);
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+            box-shadow: 0 0 0 2px var(--brand-primary-glow);
+            background-color: #0E1628;
         }
 
         .checkbox-group {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 0.65rem;
             cursor: pointer;
             user-select: none;
-            background-color: var(--bg-base);
+            background-color: var(--bg-input);
             border: 1px solid var(--border-color);
-            padding: 0.75rem 1rem;
-            border-radius: 0.5rem;
+            padding: 0.65rem 0.85rem;
+            border-radius: var(--border-radius-sm);
             transition: var(--transition);
         }
 
@@ -233,37 +372,32 @@
         .checkbox-group input {
             cursor: pointer;
             accent-color: var(--brand-primary);
-            width: 1.15rem;
-            height: 1.15rem;
+            width: 1.05rem;
+            height: 1.05rem;
         }
 
         .range-container {
-            background-color: var(--bg-base);
+            background-color: var(--bg-input);
             border: 1px solid var(--border-color);
-            padding: 0.75rem 1rem;
-            border-radius: 0.5rem;
+            padding: 0.65rem 0.85rem;
+            border-radius: var(--border-radius-sm);
         }
 
         .range-vals {
             display: flex;
             justify-content: space-between;
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             color: var(--text-secondary);
-            margin-top: 0.25rem;
+            margin-top: 0.35rem;
+            font-family: var(--font-mono);
         }
 
-        /* Upload Area */
-        .upload-container {
-            display: flex;
-            flex-direction: column;
-            gap: 2rem;
-        }
-
+        /* Upload Dropzone Hero */
         .dropzone {
-            border: 2px dashed var(--border-color);
-            background-color: var(--bg-surface);
-            border-radius: 1rem;
-            padding: 4rem 2rem;
+            border: 2px dashed rgba(255, 255, 255, 0.15);
+            background: linear-gradient(180deg, rgba(17, 26, 46, 0.6) 0%, rgba(15, 23, 42, 0.95) 100%);
+            border-radius: var(--border-radius-lg);
+            padding: 4.5rem 2rem;
             text-align: center;
             cursor: pointer;
             transition: var(--transition);
@@ -271,75 +405,114 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 1rem;
-            min-height: 350px;
+            gap: 1.25rem;
+            min-height: 400px;
+            box-shadow: var(--shadow-elevated);
         }
 
         .dropzone:hover, .dropzone.dragover {
-            border-color: var(--brand-primary);
-            background-color: rgba(59, 130, 246, 0.05);
-            box-shadow: inset 0 0 20px rgba(59, 130, 246, 0.1);
+            border-color: var(--brand-primary-light);
+            background: linear-gradient(180deg, rgba(37, 99, 235, 0.1) 0%, rgba(15, 23, 42, 0.98) 100%);
+            box-shadow: 0 0 25px rgba(37, 99, 235, 0.25);
+            transform: translateY(-2px);
         }
 
-        .upload-icon {
-            font-size: 3.5rem;
-            color: var(--brand-primary);
-            animation: float 3s ease-in-out infinite;
+        .upload-icon-wrapper {
+            width: 4.5rem;
+            height: 4.5rem;
+            background: rgba(37, 99, 235, 0.12);
+            border: 1px solid rgba(37, 99, 235, 0.35);
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #60A5FA;
+            font-size: 2.2rem;
+            animation: float 3.5s ease-in-out infinite;
         }
 
         @keyframes float {
             0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+            50% { transform: translateY(-8px); }
         }
 
         .dropzone h3 {
-            font-size: 1.25rem;
-            color: white;
-            font-weight: 600;
+            font-size: 1.35rem;
+            color: #FFFFFF;
+            font-weight: 700;
+            letter-spacing: -0.01em;
         }
 
         .dropzone p {
-            font-size: 0.875rem;
+            font-size: 0.9rem;
             color: var(--text-secondary);
-            max-width: 320px;
+            max-width: 480px;
+            line-height: 1.5;
+        }
+
+        .format-pills-row {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 0.25rem;
+        }
+
+        .format-pill {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 0.2rem 0.6rem;
+            border-radius: 2rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            font-family: var(--font-mono);
         }
 
         .file-select-btn {
-            background-color: var(--bg-surface-elevated);
-            color: white;
-            border: 1px solid var(--border-color);
-            padding: 0.625rem 1.25rem;
+            background: linear-gradient(135deg, #2563EB, #1D4ED8);
+            color: #FFFFFF;
+            border: 1px solid #3B82F6;
+            padding: 0.75rem 1.6rem;
             border-radius: 0.5rem;
-            font-weight: 500;
-            font-size: 0.875rem;
+            font-weight: 700;
+            font-size: 0.9rem;
             cursor: pointer;
             transition: var(--transition);
+            box-shadow: var(--shadow-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
 
         .file-select-btn:hover {
-            border-color: var(--brand-primary);
-            background-color: var(--brand-primary);
+            background: #1D4ED8;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
         }
 
-        /* Loading / Processing */
+        /* Loading / Processing State */
         .processing-card {
             display: none;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 3rem 2rem;
+            padding: 4rem 2rem;
             gap: 1.5rem;
             text-align: center;
+            background: var(--bg-surface);
+            border-radius: var(--border-radius-lg);
+            border: 1px solid var(--border-color);
         }
 
         .spinner {
             width: 3.5rem;
             height: 3.5rem;
-            border: 4px solid var(--bg-surface-elevated);
-            border-top: 4px solid var(--brand-primary);
+            border: 3.5px solid rgba(37, 99, 235, 0.15);
+            border-top: 3.5px solid var(--brand-primary);
             border-radius: 50%;
-            animation: spin 1s linear infinite;
-            box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
+            animation: spin 0.9s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+            box-shadow: 0 0 20px rgba(37, 99, 235, 0.3);
         }
 
         @keyframes spin {
@@ -349,91 +522,179 @@
 
         .processing-title {
             font-size: 1.25rem;
-            font-weight: 600;
-            color: white;
+            font-weight: 700;
+            color: #FFFFFF;
         }
 
         .processing-sub {
-            font-size: 0.875rem;
+            font-size: 0.85rem;
             color: var(--text-secondary);
+            max-width: 500px;
+            line-height: 1.5;
         }
 
-        /* Results Visualization */
+        /* Results Visualization Container */
         .results-container {
             display: none;
             flex-direction: column;
-            gap: 2rem;
-            animation: fadeIn 0.4s ease-out;
+            gap: 1.5rem;
+            min-width: 0;
+            max-width: 100%;
+            width: 100%;
+            box-sizing: border-box;
+            animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .overview-grid {
+        /* KPI Dashboard Executive Grid */
+        .kpi-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(4, 1fr);
             gap: 1rem;
+            width: 100%;
+            box-sizing: border-box;
         }
 
-        .overview-metric {
-            background-color: var(--bg-surface);
+        @media (max-width: 1200px) {
+            .kpi-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .kpi-card {
+            background: linear-gradient(180deg, var(--bg-surface-elevated) 0%, var(--bg-surface) 100%);
             border: 1px solid var(--border-color);
-            padding: 1.25rem;
-            border-radius: 0.75rem;
+            padding: 1.15rem 1.25rem;
+            border-radius: var(--border-radius);
             display: flex;
             flex-direction: column;
-            gap: 0.25rem;
+            gap: 0.45rem;
+            box-shadow: var(--shadow-card);
+            position: relative;
+            overflow: hidden;
         }
 
-        .overview-metric .label {
-            font-size: 0.75rem;
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: transparent;
+        }
+
+        .kpi-card.blue::before { background: linear-gradient(90deg, #2563EB, #60A5FA); }
+        .kpi-card.emerald::before { background: linear-gradient(90deg, #10B981, #34D399); }
+        .kpi-card.amber::before { background: linear-gradient(90deg, #F59E0B, #FBBF24); }
+        .kpi-card.ruby::before { background: linear-gradient(90deg, #EF4444, #F87171); }
+
+        .kpi-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .kpi-label {
+            font-size: 0.72rem;
             color: var(--text-secondary);
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .overview-metric .val {
-            font-size: 1.5rem;
             font-weight: 700;
-            color: white;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
         }
 
-        .overview-metric.success { border-left: 4px solid var(--brand-success); }
-        .overview-metric.warning { border-left: 4px solid var(--brand-warning); }
-        .overview-metric.danger { border-left: 4px solid var(--brand-danger); }
-        .overview-metric.info { border-left: 4px solid var(--brand-primary); }
+        .kpi-icon {
+            font-size: 1.15rem;
+            opacity: 0.85;
+        }
 
-        /* Tabs Navigation */
+        .kpi-val {
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: #FFFFFF;
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+        }
+
+        .kpi-sub {
+            font-size: 0.74rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .kpi-progress-bar {
+            height: 5px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 0.25rem;
+            width: 100%;
+        }
+
+        .kpi-progress-fill {
+            height: 100%;
+            background: var(--brand-success);
+            width: 100%;
+            transition: width 0.5s ease;
+        }
+
+        /* Modern Dashboard Navigation Tabs */
+        .tabs-nav-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            gap: 0.5rem;
+            overflow-x: auto;
+            padding-bottom: 0.1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
         .tabs-header {
             display: flex;
-            border-bottom: 1px solid var(--border-color);
-            gap: 1rem;
+            gap: 0.35rem;
             overflow-x: auto;
         }
 
         .tab-btn {
-            background: none;
+            background: transparent;
             border: none;
             color: var(--text-secondary);
-            padding: 0.875rem 1.25rem;
+            padding: 0.75rem 1rem;
             font-family: var(--font-family);
-            font-size: 0.875rem;
+            font-size: 0.825rem;
             font-weight: 600;
             cursor: pointer;
             transition: var(--transition);
             position: relative;
             white-space: nowrap;
+            border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0;
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
         }
 
         .tab-btn:hover {
-            color: white;
+            color: #FFFFFF;
+            background: rgba(255, 255, 255, 0.03);
         }
 
         .tab-btn.active {
-            color: var(--brand-primary);
+            color: #60A5FA;
+            background: rgba(37, 99, 235, 0.08);
         }
 
         .tab-btn.active::after {
@@ -444,25 +705,479 @@
             right: 0;
             height: 2px;
             background-color: var(--brand-primary);
-            border-radius: 2px 2px 0 0;
-            box-shadow: 0 0 8px var(--brand-primary);
+            box-shadow: 0 0 10px var(--brand-primary);
         }
 
+        .tab-badge {
+            font-size: 0.7rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 1rem;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+        }
+
+        .tab-btn.active .tab-badge {
+            background: rgba(37, 99, 235, 0.25);
+            color: #93C5FD;
+        }
+
+        .tab-badge.badge-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: #F87171;
+            font-weight: 700;
+        }
+
+        /* Tab Content Panels - STRICT OVERFLOW CONTAINMENT */
         .tab-content {
             display: none;
-            padding-top: 1.5rem;
+            min-width: 0;
+            max-width: 100%;
+            width: 100%;
+            box-sizing: border-box;
+            padding-top: 0.5rem;
         }
 
         .tab-content.active {
             display: block;
         }
 
-        /* Tree Viewer */
+        /* Table Toolbar */
+        .table-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            padding: 0.85rem 1.15rem;
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius) var(--border-radius) 0 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .search-box {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-sm);
+            padding: 0.45rem 0.75rem;
+            min-width: 220px;
+            flex: 1;
+            transition: var(--transition);
+        }
+
+        .search-box:focus-within {
+            border-color: var(--brand-primary);
+            box-shadow: 0 0 0 2px var(--brand-primary-glow);
+        }
+
+        .search-box input {
+            background: transparent;
+            border: none;
+            color: #FFFFFF;
+            font-size: 0.825rem;
+            outline: none;
+            width: 100%;
+            font-family: inherit;
+        }
+
+        .filter-pills {
+            display: flex;
+            gap: 0.4rem;
+            align-items: center;
+        }
+
+        .filter-pill {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 0.35rem 0.75rem;
+            border-radius: 2rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .filter-pill:hover {
+            color: #FFFFFF;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .filter-pill.active {
+            background: var(--brand-primary);
+            border-color: var(--brand-primary);
+            color: #FFFFFF;
+            box-shadow: 0 0 10px rgba(37, 99, 235, 0.35);
+        }
+
+        /* Table & Responsive Container - STRICT OVERFLOW CONTAINMENT */
+        .table-responsive {
+            width: 100%;
+            max-width: 100%;
+            max-height: 620px;
+            overflow-y: auto;
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 0 0 var(--border-radius) var(--border-radius);
+            background-color: var(--bg-surface);
+            box-sizing: border-box;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            text-align: left;
+            font-size: 0.825rem;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background-color: #131E34;
+            color: #FFFFFF;
+            font-weight: 700;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0.75rem 0.85rem;
+            border-bottom: 2px solid rgba(37, 99, 235, 0.35);
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 0.55rem 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+            vertical-align: middle;
+        }
+
+        tr:hover td {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        tr.invalid-row td {
+            background-color: rgba(239, 68, 68, 0.08);
+            border-bottom: 1px solid rgba(239, 68, 68, 0.25);
+        }
+
+        .tbl-input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid transparent;
+            color: #FFFFFF;
+            font-size: 0.825rem;
+            font-family: inherit;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.3rem;
+            transition: var(--transition);
+            box-sizing: border-box;
+        }
+
+        .tbl-input:hover {
+            border-color: rgba(37, 99, 235, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .tbl-input:focus {
+            outline: none;
+            border-color: var(--brand-primary);
+            background: var(--bg-input);
+            box-shadow: 0 0 0 2px var(--brand-primary-glow);
+        }
+
+        .tbl-textarea {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid transparent;
+            color: #FFFFFF;
+            font-size: 0.825rem;
+            font-family: inherit;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.3rem;
+            resize: vertical;
+            min-height: 32px;
+            line-height: 1.4;
+            transition: var(--transition);
+            box-sizing: border-box;
+        }
+
+        .tbl-textarea:hover {
+            border-color: rgba(37, 99, 235, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .tbl-textarea:focus {
+            outline: none;
+            border-color: var(--brand-primary);
+            background: var(--bg-input);
+            box-shadow: 0 0 0 2px var(--brand-primary-glow);
+        }
+
+        .tbl-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 0.3rem 0.6rem;
+            border-radius: 0.35rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+
+        .tbl-btn.btn-autofix {
+            background: rgba(245, 158, 11, 0.12);
+            border-color: rgba(245, 158, 11, 0.4);
+            color: #FBBF24;
+        }
+        .tbl-btn.btn-autofix:hover {
+            background: #F59E0B;
+            border-color: #F59E0B;
+            color: #090D16;
+        }
+
+        .tbl-btn.btn-accept {
+            background: rgba(16, 185, 129, 0.12);
+            border-color: rgba(16, 185, 129, 0.4);
+            color: #34D399;
+        }
+        .tbl-btn.btn-accept:hover {
+            background: #10B981;
+            border-color: #10B981;
+            color: #FFFFFF;
+        }
+
+        .sec-badge {
+            background: rgba(37, 99, 235, 0.12);
+            border: 1px solid rgba(37, 99, 235, 0.3);
+            color: #93C5FD;
+            font-size: 0.72rem;
+            padding: 0.15rem 0.45rem;
+            border-radius: 0.3rem;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            white-space: nowrap;
+        }
+
+        .badge-success {
+            background-color: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            color: #6EE7B7;
+            padding: 0.2rem 0.5rem;
+            border-radius: 0.3rem;
+            font-size: 0.74rem;
+            font-weight: 700;
+        }
+
+        .badge-error {
+            background-color: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            color: #FCA5A5;
+            padding: 0.2rem 0.5rem;
+            border-radius: 0.3rem;
+            font-size: 0.74rem;
+            font-weight: 700;
+        }
+
+        /* STRICTLY BOUNDED RAW JSON VIEWER - PREVENTS SCREEN BLOWOUT */
+        .json-viewer-container {
+            background: #080C14;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow-elevated);
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+
+        .json-viewer-header {
+            background: #0F172A;
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.75rem 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .json-file-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            font-size: 0.825rem;
+            font-weight: 700;
+            color: #93C5FD;
+            font-family: var(--font-mono);
+        }
+
+        .json-stats-badge {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.2rem 0.55rem;
+            border-radius: 0.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            font-family: var(--font-mono);
+        }
+
+        .json-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-json-action {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #FFFFFF;
+            padding: 0.38rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .btn-json-action:hover {
+            background: rgba(37, 99, 235, 0.2);
+            border-color: var(--brand-primary);
+            color: #60A5FA;
+        }
+
+        .btn-json-action.primary {
+            background: linear-gradient(135deg, #2563EB, #1D4ED8);
+            border-color: #3B82F6;
+            color: #FFFFFF;
+            box-shadow: 0 2px 10px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-json-action.primary:hover {
+            background: #1D4ED8;
+            color: #FFFFFF;
+        }
+
+        /* Strictly bounded pre element with wrap & scroll safety */
+        .json-code-box {
+            max-height: 540px;
+            height: auto;
+            min-height: 200px;
+            overflow-y: auto;
+            overflow-x: auto;
+            padding: 1.25rem 1.5rem;
+            margin: 0;
+            font-family: var(--font-mono);
+            font-size: 0.81rem;
+            line-height: 1.6;
+            color: #93C5FD;
+            background: #080C14;
+            white-space: pre-wrap;
+            word-break: break-all;
+            tab-size: 2;
+            box-sizing: border-box;
+            max-width: 100%;
+            width: 100%;
+        }
+
+        /* Discrepancy Cards */
+        .issue-card {
+            background: rgba(239, 68, 68, 0.05);
+            border: 1px solid rgba(239, 68, 68, 0.25);
+            border-radius: var(--border-radius);
+            padding: 1.15rem;
+            margin-bottom: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            transition: var(--transition);
+        }
+
+        .issue-card:hover {
+            border-color: rgba(239, 68, 68, 0.45);
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.12);
+        }
+
+        .issue-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .issue-title {
+            font-weight: 700;
+            font-size: 0.925rem;
+            color: #FFA5A5;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .issue-comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.25rem;
+        }
+
+        .issue-calc-box {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            border-radius: 0.5rem;
+            padding: 0.65rem 0.85rem;
+        }
+
+        .issue-doc-box {
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            border-radius: 0.5rem;
+            padding: 0.65rem 0.85rem;
+        }
+
+        .issue-box-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 0.2rem;
+            font-weight: 600;
+        }
+
+        .issue-box-val {
+            font-size: 1.05rem;
+            font-weight: 700;
+            font-family: var(--font-mono);
+        }
+
+        /* Hierarchy Section Tree */
         .tree-node {
-            margin-left: 1.5rem;
+            margin-left: 1.25rem;
             border-left: 1px dashed var(--border-color);
-            padding-left: 1rem;
-            margin-top: 0.5rem;
+            padding-left: 0.85rem;
+            margin-top: 0.45rem;
         }
 
         .tree-node.root {
@@ -475,17 +1190,17 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0.5rem 0.75rem;
+            padding: 0.55rem 0.75rem;
             background-color: var(--bg-surface-elevated);
             border: 1px solid var(--border-color);
-            border-radius: 0.375rem;
+            border-radius: var(--border-radius-sm);
             margin-bottom: 0.25rem;
             cursor: pointer;
             transition: var(--transition);
         }
 
         .tree-header:hover {
-            background-color: #273659;
+            background-color: var(--bg-surface-hover);
             border-color: var(--brand-primary);
         }
 
@@ -496,9 +1211,9 @@
         }
 
         .tree-toggle {
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             color: var(--text-secondary);
-            transition: transform 0.2rem;
+            transition: transform 0.2s ease;
         }
 
         .tree-toggle.collapsed {
@@ -507,183 +1222,58 @@
 
         .tree-number {
             font-weight: 700;
-            color: var(--brand-primary);
-            font-size: 0.875rem;
+            color: #60A5FA;
+            font-size: 0.825rem;
+            font-family: var(--font-mono);
         }
 
         .tree-title {
-            font-weight: 500;
-            font-size: 0.875rem;
+            font-weight: 600;
+            font-size: 0.825rem;
+            color: #FFFFFF;
         }
 
         .tree-total {
-            font-weight: 600;
-            font-size: 0.875rem;
+            font-weight: 700;
+            font-size: 0.825rem;
             color: var(--brand-success);
+            font-family: var(--font-mono);
         }
 
-        /* Table view */
-        .table-responsive {
-            width: 100%;
-            overflow-x: auto;
-            border: 1px solid var(--border-color);
-            border-radius: 0.75rem;
-            background-color: var(--bg-surface);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-            font-size: 0.875rem;
-        }
-
-        th {
-            background-color: var(--bg-surface-elevated);
-            color: white;
-            font-weight: 600;
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        td {
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid var(--border-color);
-            color: var(--text-primary);
-        }
-
-        tr:hover td {
-            background-color: rgba(255, 255, 255, 0.02);
-        }
-
-        tr.invalid-row td {
-            background-color: rgba(239, 68, 68, 0.08);
-            border-bottom: 1px solid rgba(239, 68, 68, 0.3);
-        }
-
-        .badge-error {
-            background-color: rgba(239, 68, 68, 0.2);
-            color: #FFA5A5;
-            padding: 0.125rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-
-        /* Action Buttons */
-        .btn-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-            gap: 0.75rem;
-        }
-
-        .btn-export {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            background-color: var(--bg-surface-elevated);
-            border: 1px solid var(--border-color);
-            color: white;
-            padding: 0.75rem;
-            border-radius: 0.5rem;
-            font-weight: 600;
-            font-size: 0.875rem;
-            cursor: pointer;
-            text-decoration: none;
-            transition: var(--transition);
-        }
-
-        .btn-export:hover {
-            background-color: var(--brand-primary);
-            border-color: var(--brand-primary);
-            box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
-        }
-
-        .reset-btn {
-            background-color: transparent;
-            color: var(--text-secondary);
-            border: 1px solid var(--border-color);
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            font-weight: 500;
-            transition: var(--transition);
-        }
-
-        .reset-btn:hover {
-            color: white;
-            border-color: var(--text-secondary);
-        }
-
-        /* Issues view */
-        .issue-card {
-            background-color: rgba(239, 68, 68, 0.05);
-            border: 1px solid rgba(239, 68, 68, 0.2);
-            border-radius: 0.5rem;
-            padding: 1rem;
-            margin-bottom: 0.75rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
-        }
-
-        .issue-card-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .issue-title {
-            font-weight: 600;
-            font-size: 0.875rem;
-            color: #FFA5A5;
-        }
-
-        .issue-msg {
-            font-size: 0.875rem;
-            color: var(--text-primary);
-        }
-
-        /* Code block style */
-        /* Export Center & Blueprint Hero */
+        /* Export Center Card */
         .export-blueprint-hero {
-            background: linear-gradient(145deg, rgba(37, 99, 235, 0.12), rgba(30, 64, 175, 0.05));
-            border: 1px solid rgba(59, 130, 246, 0.35);
-            border-radius: 0.75rem;
+            background: linear-gradient(145deg, rgba(37, 99, 235, 0.12), rgba(15, 23, 42, 0.6));
+            border: 1px solid rgba(37, 99, 235, 0.35);
+            border-radius: var(--border-radius);
             padding: 1.1rem;
-            margin-bottom: 1.25rem;
+            margin-bottom: 1.15rem;
             display: flex;
             flex-direction: column;
             gap: 0.65rem;
-            box-shadow: 0 4px 16px rgba(37, 99, 235, 0.15);
+            box-shadow: 0 4px 20px rgba(37, 99, 235, 0.15);
         }
 
         .btn-export-primary {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.65rem;
+            gap: 0.6rem;
             background: linear-gradient(135deg, #2563EB, #1D4ED8);
             border: 1px solid #3B82F6;
-            color: #ffffff;
-            padding: 0.85rem 1.15rem;
-            border-radius: 0.5rem;
+            color: #FFFFFF;
+            padding: 0.8rem 1.1rem;
+            border-radius: var(--border-radius-sm);
             font-weight: 700;
-            font-size: 0.9rem;
-            letter-spacing: 0.01em;
+            font-size: 0.875rem;
             cursor: pointer;
-            box-shadow: 0 4px 16px rgba(37, 99, 235, 0.45);
+            box-shadow: var(--shadow-primary);
             transition: var(--transition);
             width: 100%;
         }
         .btn-export-primary:hover {
-            background: linear-gradient(135deg, #1D4ED8, #1E40AF);
+            background: #1D4ED8;
             transform: translateY(-1px);
-            box-shadow: 0 6px 22px rgba(37, 99, 235, 0.6);
-        }
-        .btn-export-primary:active {
-            transform: translateY(0);
+            box-shadow: 0 6px 22px rgba(37, 99, 235, 0.55);
         }
 
         .btn-export-save {
@@ -694,10 +1284,10 @@
             background: rgba(16, 185, 129, 0.12);
             border: 1px solid rgba(16, 185, 129, 0.35);
             color: #34D399;
-            padding: 0.7rem 1rem;
-            border-radius: 0.5rem;
+            padding: 0.65rem 0.95rem;
+            border-radius: var(--border-radius-sm);
             font-weight: 600;
-            font-size: 0.825rem;
+            font-size: 0.8rem;
             cursor: pointer;
             transition: var(--transition);
             width: 100%;
@@ -705,24 +1295,25 @@
         .btn-export-save:hover {
             background: rgba(16, 185, 129, 0.22);
             border-color: #10B981;
-            color: #ffffff;
+            color: #FFFFFF;
         }
 
         .export-formats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 0.6rem;
+            gap: 0.55rem;
         }
+
         .export-format-btn {
             display: flex;
             align-items: center;
-            gap: 0.65rem;
-            background: var(--bg-surface-elevated);
+            gap: 0.6rem;
+            background: var(--bg-input);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
-            padding: 0.65rem 0.85rem;
-            border-radius: 0.5rem;
-            font-size: 0.8rem;
+            padding: 0.6rem 0.75rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.78rem;
             font-weight: 600;
             cursor: pointer;
             transition: var(--transition);
@@ -730,7 +1321,7 @@
         }
         .export-format-btn:hover {
             border-color: var(--brand-primary);
-            background: rgba(59, 130, 246, 0.12);
+            background: rgba(37, 99, 235, 0.12);
             transform: translateY(-1px);
             color: #60A5FA;
         }
@@ -744,7 +1335,7 @@
             line-height: 1.2;
         }
         .export-format-btn .fmt-title {
-            font-size: 0.8rem;
+            font-size: 0.78rem;
             font-weight: 600;
         }
         .export-format-btn .fmt-ext {
@@ -757,377 +1348,31 @@
             background: rgba(16, 185, 129, 0.15);
             color: #34D399;
             border: 1px solid rgba(16, 185, 129, 0.35);
-            padding: 0.2rem 0.6rem;
+            padding: 0.18rem 0.55rem;
             border-radius: 9999px;
-            font-size: 0.72rem;
+            font-size: 0.7rem;
             font-weight: 700;
             letter-spacing: 0.02em;
         }
 
-        /* Table toolbar & filters */
-        .table-toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem;
-            flex-wrap: wrap;
-            padding: 0.85rem 1.15rem;
-            background: var(--bg-surface-elevated);
-            border: 1px solid var(--border-color);
-            border-radius: 0.75rem 0.75rem 0 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .search-box {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            background: var(--bg-surface);
-            border: 1px solid var(--border-color);
-            border-radius: 0.5rem;
-            padding: 0.45rem 0.75rem;
-            min-width: 240px;
-            flex: 1;
-            transition: var(--transition);
-        }
-        .search-box:focus-within {
-            border-color: var(--brand-primary);
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-        }
-        .search-box input {
-            background: transparent;
-            border: none;
-            color: var(--text-primary);
-            font-size: 0.85rem;
-            outline: none;
-            width: 100%;
-            font-family: inherit;
-        }
-        .filter-pills {
-            display: flex;
-            gap: 0.45rem;
-            align-items: center;
-        }
-        .filter-pill {
-            background: transparent;
-            border: 1px solid var(--border-color);
+        .reset-btn {
+            background-color: transparent;
             color: var(--text-secondary);
-            padding: 0.4rem 0.75rem;
-            border-radius: 2rem;
-            font-size: 0.8rem;
-            font-weight: 600;
+            border: 1px solid var(--border-color);
+            padding: 0.45rem 0.85rem;
+            border-radius: var(--border-radius-sm);
             cursor: pointer;
+            font-weight: 600;
+            font-size: 0.8rem;
             transition: var(--transition);
-            display: flex;
-            align-items: center;
-            gap: 0.35rem;
         }
-        .filter-pill:hover {
-            color: var(--text-primary);
+
+        .reset-btn:hover {
+            color: #FFFFFF;
             border-color: var(--text-secondary);
         }
-        .filter-pill.active {
-            background: var(--brand-primary);
-            border-color: var(--brand-primary);
-            color: #ffffff;
-            box-shadow: 0 0 10px rgba(59, 130, 246, 0.35);
-        }
 
-        /* Sticky table & responsive wrapper */
-        .table-responsive {
-            width: 100%;
-            max-height: 680px;
-            overflow-y: auto;
-            overflow-x: auto;
-            border: 1px solid var(--border-color);
-            border-radius: 0 0 0.75rem 0.75rem;
-            background-color: var(--bg-surface);
-        }
-        table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-            text-align: left;
-            font-size: 0.85rem;
-        }
-        th {
-            position: sticky;
-            top: 0;
-            z-index: 20;
-            background-color: #162035;
-            color: #F8FAFC;
-            font-weight: 700;
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            padding: 0.85rem 1rem;
-            border-bottom: 2px solid rgba(59, 130, 246, 0.3);
-            white-space: nowrap;
-        }
-        td {
-            padding: 0.65rem 0.85rem;
-            border-bottom: 1px solid var(--border-color);
-            color: var(--text-primary);
-            vertical-align: middle;
-        }
-        tr:hover td {
-            background-color: rgba(255, 255, 255, 0.035);
-        }
-        tr.invalid-row td {
-            background-color: rgba(239, 68, 68, 0.09);
-            border-bottom: 1px solid rgba(239, 68, 68, 0.35);
-        }
-
-        /* Editable cell inputs */
-        .tbl-input {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid transparent;
-            color: var(--text-primary);
-            font-size: 0.85rem;
-            font-family: inherit;
-            padding: 0.35rem 0.5rem;
-            border-radius: 0.375rem;
-            transition: var(--transition);
-        }
-        .tbl-input:hover {
-            border-color: rgba(59, 130, 246, 0.4);
-            background: rgba(255, 255, 255, 0.04);
-        }
-        .tbl-input:focus {
-            outline: none;
-            border-color: var(--brand-primary);
-            background: var(--bg-surface-elevated);
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
-        }
-        .tbl-textarea {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid transparent;
-            color: var(--text-primary);
-            font-size: 0.835rem;
-            font-family: inherit;
-            padding: 0.35rem 0.5rem;
-            border-radius: 0.375rem;
-            resize: vertical;
-            min-height: 32px;
-            line-height: 1.45;
-            transition: var(--transition);
-        }
-        .tbl-textarea:hover {
-            border-color: rgba(59, 130, 246, 0.4);
-            background: rgba(255, 255, 255, 0.04);
-        }
-        .tbl-textarea:focus {
-            outline: none;
-            border-color: var(--brand-primary);
-            background: var(--bg-surface-elevated);
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
-        }
-
-        .tbl-btn {
-            background: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--text-secondary);
-            padding: 0.3rem 0.65rem;
-            border-radius: 0.375rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: var(--transition);
-            white-space: nowrap;
-        }
-        .tbl-btn.btn-autofix {
-            background: rgba(245, 158, 11, 0.15);
-            border-color: rgba(245, 158, 11, 0.45);
-            color: #FBBF24;
-        }
-        .tbl-btn.btn-autofix:hover {
-            background: #F59E0B;
-            border-color: #F59E0B;
-            color: #111;
-        }
-        .tbl-btn.btn-accept {
-            background: rgba(16, 185, 129, 0.15);
-            border-color: rgba(16, 185, 129, 0.45);
-            color: #34D399;
-        }
-        .tbl-btn.btn-accept:hover {
-            background: #10B981;
-            border-color: #10B981;
-            color: #ffffff;
-        }
-
-        .sec-badge {
-            background: rgba(59, 130, 246, 0.15);
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            color: #93C5FD;
-            font-size: 0.725rem;
-            padding: 0.15rem 0.45rem;
-            border-radius: 0.3rem;
-            font-weight: 700;
-            font-family: var(--font-mono);
-            white-space: nowrap;
-        }
-        .badge-success {
-            background-color: rgba(16, 185, 129, 0.18);
-            border: 1px solid rgba(16, 185, 129, 0.4);
-            color: #6EE7B7;
-            padding: 0.2rem 0.55rem;
-            border-radius: 0.3rem;
-            font-size: 0.75rem;
-            font-weight: 700;
-        }
-
-        /* Bounded Raw JSON Viewer */
-        .json-viewer-container {
-            background: #080C14;
-            border: 1px solid var(--border-color);
-            border-radius: 0.75rem;
-            overflow: hidden;
-            box-shadow: var(--shadow-lg);
-            display: flex;
-            flex-direction: column;
-            width: 100%;
-        }
-        .json-viewer-header {
-            background: #111827;
-            border-bottom: 1px solid var(--border-color);
-            padding: 0.75rem 1.25rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 0.75rem;
-        }
-        .json-file-badge {
-            display: flex;
-            align-items: center;
-            gap: 0.55rem;
-            font-size: 0.85rem;
-            font-weight: 700;
-            color: #93C5FD;
-            font-family: var(--font-mono);
-        }
-        .json-stats-badge {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            background: rgba(255, 255, 255, 0.05);
-            padding: 0.25rem 0.6rem;
-            border-radius: 0.25rem;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            font-family: var(--font-mono);
-        }
-        .json-actions {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .btn-json-action {
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #F8FAFC;
-            padding: 0.4rem 0.85rem;
-            border-radius: 0.375rem;
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: var(--transition);
-        }
-        .btn-json-action:hover {
-            background: rgba(59, 130, 246, 0.2);
-            border-color: var(--brand-primary);
-            color: #60A5FA;
-        }
-        .btn-json-action.primary {
-            background: var(--brand-primary);
-            border-color: var(--brand-primary);
-            color: #ffffff;
-        }
-        .btn-json-action.primary:hover {
-            background: var(--brand-primary-hover);
-        }
-        .json-code-box {
-            max-height: 580px;
-            height: 580px;
-            overflow-y: auto;
-            overflow-x: auto;
-            padding: 1.25rem 1.5rem;
-            margin: 0;
-            font-family: var(--font-mono);
-            font-size: 0.82rem;
-            line-height: 1.6;
-            color: #93C5FD;
-            background: #080C14;
-            white-space: pre;
-            tab-size: 2;
-        }
-
-        /* Enhanced Discrepancy Cards */
-        .issue-card {
-            background: rgba(239, 68, 68, 0.06);
-            border: 1px solid rgba(239, 68, 68, 0.25);
-            border-radius: 0.75rem;
-            padding: 1.2rem;
-            margin-bottom: 0.85rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-            transition: var(--transition);
-        }
-        .issue-card:hover {
-            border-color: rgba(239, 68, 68, 0.4);
-            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.1);
-        }
-        .issue-card-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-        }
-        .issue-title {
-            font-weight: 700;
-            font-size: 0.95rem;
-            color: #FFA5A5;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .issue-comparison-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 0.75rem;
-            margin-top: 0.25rem;
-        }
-        .issue-calc-box {
-            background: rgba(16, 185, 129, 0.08);
-            border: 1px solid rgba(16, 185, 129, 0.25);
-            border-radius: 0.5rem;
-            padding: 0.65rem 0.85rem;
-        }
-        .issue-doc-box {
-            background: rgba(245, 158, 11, 0.08);
-            border: 1px solid rgba(245, 158, 11, 0.25);
-            border-radius: 0.5rem;
-            padding: 0.65rem 0.85rem;
-        }
-        .issue-box-label {
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-            margin-bottom: 0.2rem;
-        }
-        .issue-box-val {
-            font-size: 1.05rem;
-            font-weight: 700;
-            font-family: var(--font-mono);
-        }
-
-        /* Toast notifications */
+        /* Toast Notifications */
         .toast-container {
             position: fixed;
             bottom: 2rem;
@@ -1138,15 +1383,16 @@
             gap: 0.5rem;
             pointer-events: none;
         }
+
         .toast {
-            background: var(--bg-surface-elevated);
-            color: #ffffff;
+            background: #152037;
+            color: #FFFFFF;
             border: 1px solid var(--border-color);
             padding: 0.85rem 1.25rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-            font-size: 0.875rem;
-            font-weight: 500;
+            border-radius: var(--border-radius-sm);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+            font-size: 0.85rem;
+            font-weight: 600;
             display: flex;
             align-items: center;
             gap: 0.6rem;
@@ -1163,94 +1409,122 @@
     </style>
 </head>
 <body>
+    <!-- Top Executive Header -->
     <header>
-        <div class="logo-container">
-            <div class="logo-icon">B</div>
-            <div class="logo-text">
-                <h1>BOQ Parser AI</h1>
-                <p>Construction Document Intelligence Framework</p>
+        <div class="header-brand">
+            <div class="brand-badge">AEC</div>
+            <div class="brand-text">
+                <h1>intoAEC <span class="accent">• BOQ Studio</span></h1>
+                <p>Construction Document Intelligence Suite</p>
             </div>
         </div>
-        <div class="status-badge">
-            <span class="status-dot" id="server-status-dot"></span>
-            <span id="server-status-text">Checking server...</span>
+
+        <div class="header-center-info">
+            <div class="doc-active-chip" id="header-doc-chip">
+                <span>📄</span>
+                <span class="doc-name" id="header-doc-name">Document</span>
+                <span style="opacity:0.5;">•</span>
+                <span id="header-doc-pages">Pages</span>
+            </div>
+        </div>
+
+        <div class="header-actions">
+            <button class="btn-header-quick-download" id="header-download-btn" onclick="downloadBlueprintJson()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Export output.json</span>
+            </button>
+            <div class="status-badge">
+                <span class="status-dot" id="server-status-dot"></span>
+                <span id="server-status-text">Checking server...</span>
+            </div>
         </div>
     </header>
 
     <main>
-        <!-- Sidebar controls -->
+        <!-- Sidebar Controls & Config Rail -->
         <div class="sidebar">
             <div class="card">
-                <h2 class="section-title">Pipeline Configurations</h2>
-                <div class="form-group" style="background:rgba(99,102,241,0.08); padding:0.85rem; border-radius:0.5rem; border:1px solid rgba(99,102,241,0.25);">
+                <div class="card-header-row">
+                    <h2 class="section-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        Extraction Engine
+                    </h2>
+                    <span style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-mono);">v1.0.0</span>
+                </div>
+
+                <!-- Ollama LLM Config -->
+                <div class="form-group" style="background:rgba(37, 99, 235, 0.08); padding:0.85rem; border-radius:0.5rem; border:1px solid rgba(37, 99, 235, 0.25);">
                     <div class="checkbox-group">
                         <input type="checkbox" id="use-llm" checked>
-                        <label for="use-llm" style="margin-bottom:0; cursor:pointer; font-weight:700; color:var(--brand-primary); font-size:0.9rem;">Enable Ollama LLM (qwen2.5)</label>
+                        <label for="use-llm" style="margin-bottom:0; cursor:pointer; font-weight:700; color:#60A5FA; font-size:0.85rem;">Enable Ollama AI (qwen2.5)</label>
                     </div>
                     <div id="llm-options-container" style="margin-top:0.6rem; display:flex; flex-direction:column; gap:0.4rem;">
-                        <label for="ollama-host" style="font-size:0.75rem; color:var(--text-secondary); margin:0;">Ollama Host</label>
-                        <input type="text" id="ollama-host" class="form-control" value="http://localhost:11434" style="font-size:0.8rem; padding:0.35rem 0.5rem;">
-                        <label for="ollama-model" style="font-size:0.75rem; color:var(--text-secondary); margin:0;">Ollama Model</label>
-                        <input type="text" id="ollama-model" class="form-control" value="qwen2.5:1.5b" style="font-size:0.8rem; padding:0.35rem 0.5rem;">
-                        <div id="ollama-status-badge" style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">Checking Ollama status...</div>
+                        <label for="ollama-host" style="font-size:0.72rem; color:var(--text-secondary); margin:0;">Ollama Host URL</label>
+                        <input type="text" id="ollama-host" class="form-control" value="http://localhost:11434" style="font-size:0.78rem; padding:0.35rem 0.5rem;">
+                        <label for="ollama-model" style="font-size:0.72rem; color:var(--text-secondary); margin:0;">Target Model</label>
+                        <input type="text" id="ollama-model" class="form-control" value="qwen2.5:1.5b" style="font-size:0.78rem; padding:0.35rem 0.5rem;">
+                        <div id="ollama-status-badge" style="font-size:0.72rem; color:var(--text-muted); margin-top:0.25rem;">Checking Ollama status...</div>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="server-url">olmocr vLLM Server URL</label>
+                    <label for="server-url">OCR / VLM Server URL</label>
                     <input type="text" id="server-url" class="form-control" value="http://localhost:8000/v1">
                 </div>
+
                 <div class="form-group">
                     <div class="checkbox-group" id="fallback-checkbox-container">
                         <input type="checkbox" id="fallback-mode">
-                        <label for="fallback-mode" style="margin-bottom:0; cursor:pointer;">Force Fallback Mode (pypdfium2)</label>
+                        <label for="fallback-mode" style="margin-bottom:0; cursor:pointer; font-size:0.8rem;">Native PDF Layout Mode</label>
                     </div>
                 </div>
+
                 <div class="form-group">
-                    <label for="dpi-range">Rendering DPI (<span id="dpi-val">300</span>)</label>
+                    <label for="dpi-range">Rendering Resolution (<span id="dpi-val" style="font-family:var(--font-mono); color:#60A5FA;">300</span> DPI)</label>
                     <div class="range-container">
                         <input type="range" id="dpi-range" min="300" max="600" step="50" value="300" style="width:100%; accent-color:var(--brand-primary);">
                         <div class="range-vals">
-                            <span>300 (Fast)</span>
-                            <span>600 (Precise)</span>
+                            <span>300 (Standard)</span>
+                            <span>600 (High Def)</span>
                         </div>
                     </div>
                 </div>
+
                 <div class="form-group">
                     <label for="tolerance">Amount Validation Tolerance</label>
                     <input type="number" id="tolerance" class="form-control" step="0.01" value="0.02">
                 </div>
             </div>
 
+            <!-- Export Center Card (Shown when Results active) -->
             <div class="card" id="export-card" style="display:none;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.85rem;">
-                    <h2 class="section-title" style="margin:0;">Export Center</h2>
+                <div class="card-header-row">
+                    <h2 class="section-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Export Center
+                    </h2>
                     <span class="badge-pill-verified">✓ Blueprint Verified</span>
                 </div>
 
-                <!-- Primary Action: output.json Blueprint -->
                 <div class="export-blueprint-hero">
-                    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.35rem;">
-                        <span style="font-size:1.4rem;">📦</span>
+                    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.25rem;">
+                        <span style="font-size:1.3rem;">📦</span>
                         <div>
-                            <div style="font-weight:700; font-size:0.95rem; color:#fff;">output.json Blueprint</div>
-                            <div style="font-size:0.75rem; color:var(--text-secondary);">Authoritative Construction Contract Schema</div>
+                            <div style="font-weight:700; font-size:0.9rem; color:#FFFFFF;">output.json Blueprint</div>
+                            <div style="font-size:0.72rem; color:var(--text-secondary);">Authoritative Construction Contract Schema</div>
                         </div>
                     </div>
                     <button class="btn-export-primary" onclick="downloadBlueprintJson()" id="btn-download-blueprint">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         Download Final JSON (output.json)
                     </button>
                     <button class="btn-export-save" onclick="saveJsonToServer()" id="btn-save-root">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                         Save Directly to Server Root
                     </button>
-                    <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.4; margin-top:0.15rem;">
-                        Exports clean <code>output.json</code> with all verified manual changes applied.
-                    </div>
                 </div>
 
-                <h3 style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin:1.25rem 0 0.6rem;">Alternative Formats</h3>
+                <h3 style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:0.5rem; font-weight:700;">Secondary Formats</h3>
                 <div class="export-formats-grid">
                     <button class="export-format-btn" onclick="downloadFormat('excel')">
                         <span class="fmt-icon" style="color:#10B981;">📊</span>
@@ -1282,93 +1556,177 @@
                     </button>
                 </div>
             </div>
+
+            <!-- Helpful Guidance Card -->
+            <div class="card" id="guidance-card">
+                <div class="card-header-row">
+                    <h2 class="section-title">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        Supported BOQ Types
+                    </h2>
+                </div>
+                <ul style="list-style:none; display:flex; flex-direction:column; gap:0.5rem; font-size:0.78rem; color:var(--text-secondary);">
+                    <li style="display:flex; align-items:center; gap:0.4rem;">
+                        <span style="color:#10B981;">✓</span> Bill of Quantities (Standard / Tender)
+                    </li>
+                    <li style="display:flex; align-items:center; gap:0.4rem;">
+                        <span style="color:#10B981;">✓</span> Material Summaries & Estimation Sheets
+                    </li>
+                    <li style="display:flex; align-items:center; gap:0.4rem;">
+                        <span style="color:#10B981;">✓</span> Rate Analysis & Stagewise Reports
+                    </li>
+                    <li style="display:flex; align-items:center; gap:0.4rem;">
+                        <span style="color:#10B981;">✓</span> Scanned or Digital Architectural PDFs
+                    </li>
+                </ul>
+            </div>
         </div>
 
-        <!-- Main Display -->
-        <div style="display:flex; flex-direction:column; gap:2rem; width: 100%;">
-            <!-- Upload Dropzone -->
+        <!-- Main Display Content - Strictly Contained -->
+        <div class="main-content">
+            <!-- Upload Dropzone Hero Card -->
             <div class="card" id="upload-card">
                 <div class="dropzone" id="dropzone">
-                    <div class="upload-icon">📤</div>
-                    <h3>Upload BOQ PDF Document</h3>
-                    <p>Drag and drop your BOQ, Material Summary, Estimation sheet, or Quantity Survey PDF here.</p>
-                    <p style="font-size:0.75rem; color:var(--text-muted);">Supports digital, scanned, or mixed PDFs.</p>
+                    <div class="upload-icon-wrapper">
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    </div>
+                    <div>
+                        <h3>Upload Construction BOQ Document</h3>
+                        <p style="margin-top:0.35rem;">Drag and drop your BOQ, Material Schedule, or Quantity Surveying PDF here.</p>
+                    </div>
+                    <div class="format-pills-row">
+                        <span class="format-pill">PDF Document</span>
+                        <span class="format-pill">Digital Native</span>
+                        <span class="format-pill">High DPI Scans</span>
+                        <span class="format-pill">Hierarchical Bills</span>
+                    </div>
                     <input type="file" id="file-input" accept="application/pdf" style="display:none;">
-                    <button class="file-select-btn" onclick="document.getElementById('file-input').click()">Browse Files</button>
+                    <button class="file-select-btn" onclick="document.getElementById('file-input').click()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Browse & Upload PDF
+                    </button>
                 </div>
             </div>
 
-            <!-- Loading Spinner -->
+            <!-- Loading Spinner State -->
             <div class="card processing-card" id="processing-card">
                 <div class="spinner"></div>
-                <div class="processing-title">Parsing Construction Document...</div>
-                <div class="processing-sub">Running PDF to image render, OCR extraction, table reconstruction, and hierarchy layout detection. This may take a minute.</div>
+                <div class="processing-title">Parsing Construction Document Intelligence...</div>
+                <div class="processing-sub">
+                    Executing native document extraction, layout topology reconstruction, Ollama LLM semantic normalization, and mathematical validation.
+                </div>
             </div>
 
-            <!-- Results display -->
+            <!-- Complete Results Dashboard -->
             <div class="results-container" id="results-container">
+                <!-- Dashboard Header Bar -->
                 <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
-                    <h2 style="font-size:1.5rem; font-weight:700;">Extraction & Verification Results</h2>
+                    <div>
+                        <h2 style="font-size:1.35rem; font-weight:800; color:#FFFFFF; letter-spacing:-0.02em;">
+                            Document Intelligence Dashboard
+                        </h2>
+                        <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:0.15rem;">
+                            Live reconciled quantity survey data synced with <code>output.json</code> blueprint.
+                        </p>
+                    </div>
                     <div style="display:flex; gap:0.6rem; align-items:center;">
-                        <button class="tbl-btn btn-accept" style="padding:0.5rem 1rem; font-weight:700; font-size:0.85rem;" onclick="downloadBlueprintJson()">
+                        <button class="tbl-btn btn-accept" style="padding:0.5rem 1rem; font-weight:700; font-size:0.825rem;" onclick="downloadBlueprintJson()">
                             ⬇️ Download output.json
                         </button>
-                        <button class="reset-btn" onclick="resetUI()">Upload Another File</button>
+                        <button class="reset-btn" onclick="resetUI()">Upload Another PDF</button>
                     </div>
                 </div>
 
-                <div class="overview-grid">
-                    <div class="overview-metric info">
-                        <span class="label">Project Name</span>
-                        <span class="val" id="meta-project-name">-</span>
+                <!-- 4 Executive KPI Cards -->
+                <div class="kpi-grid">
+                    <div class="kpi-card blue">
+                        <div class="kpi-header">
+                            <span class="kpi-label">Project Contract</span>
+                            <span class="kpi-icon">🏗️</span>
+                        </div>
+                        <div class="kpi-val" id="meta-project-name" style="font-size:1.2rem; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">-</div>
+                        <div class="kpi-sub" id="meta-report-type">Report Type • Digital PDF</div>
                     </div>
-                    <div class="overview-metric info">
-                        <span class="label">Report Type</span>
-                        <span class="val" id="meta-report-type">-</span>
+
+                    <div class="kpi-card emerald">
+                        <div class="kpi-header">
+                            <span class="kpi-label">Inventory Scope</span>
+                            <span class="kpi-icon">📦</span>
+                        </div>
+                        <div class="kpi-val" id="kpi-total-items">0 Items</div>
+                        <div class="kpi-sub" id="kpi-section-count">0 Sections Detected</div>
                     </div>
-                    <div class="overview-metric" id="overview-validity">
-                        <span class="label">Validation Rate</span>
-                        <span class="val" id="meta-validation-rate">-</span>
+
+                    <div class="kpi-card amber" id="kpi-reconciliation-card">
+                        <div class="kpi-header">
+                            <span class="kpi-label">Reconciliation Rate</span>
+                            <span class="kpi-icon">🛡️</span>
+                        </div>
+                        <div class="kpi-val" id="meta-validation-rate">100%</div>
+                        <div class="kpi-progress-bar">
+                            <div class="kpi-progress-fill" id="kpi-progress-bar" style="width: 100%;"></div>
+                        </div>
+                        <div class="kpi-sub" id="kpi-discrepancy-sub">0 Discrepancies</div>
                     </div>
-                    <div class="overview-metric success">
-                        <span class="label">Grand Total</span>
-                        <span class="val" id="meta-grand-total">Rs. 0.00</span>
+
+                    <div class="kpi-card blue">
+                        <div class="kpi-header">
+                            <span class="kpi-label">Total Contract Value</span>
+                            <span class="kpi-icon">💰</span>
+                        </div>
+                        <div class="kpi-val" id="meta-grand-total" style="font-family:var(--font-mono); font-size:1.25rem; color:#60A5FA;">Rs. 0.00</div>
+                        <div class="kpi-sub">Verified Blueprint Total</div>
                     </div>
                 </div>
 
-                <!-- Tabs navigation -->
-                <div class="tabs-header">
-                    <button class="tab-btn active" onclick="switchTab('tab-table')">Detailed Rows & Manual Editor</button>
-                    <button class="tab-btn" onclick="switchTab('tab-issues')">Validation Issues (<span id="issues-count">0</span>)</button>
-                    <button class="tab-btn" onclick="switchTab('tab-html-report')">Interactive Report</button>
-                    <button class="tab-btn" onclick="switchTab('tab-hierarchy')">Hierarchy & Tree</button>
-                    <button class="tab-btn" onclick="switchTab('tab-raw')">Raw JSON</button>
+                <!-- Navigation Tabs Bar -->
+                <div class="tabs-nav-bar">
+                    <div class="tabs-header">
+                        <button class="tab-btn active" onclick="switchTab('tab-table')">
+                            <span>📋 Itemized BOQ & Editor</span>
+                            <span class="tab-badge" id="tab-badge-table-count">0</span>
+                        </button>
+                        <button class="tab-btn" onclick="switchTab('tab-issues')" id="tab-btn-issues">
+                            <span>⚠️ Discrepancies</span>
+                            <span class="tab-badge badge-danger" id="tab-badge-issues-count">0</span>
+                        </button>
+                        <button class="tab-btn" onclick="switchTab('tab-hierarchy')">
+                            <span>🌳 Bill Hierarchy</span>
+                        </button>
+                        <button class="tab-btn" onclick="switchTab('tab-html-report')">
+                            <span>📊 Interactive Report</span>
+                        </button>
+                        <button class="tab-btn" onclick="switchTab('tab-raw')">
+                            <span>⚡ Blueprint JSON</span>
+                            <span class="tab-badge">output.json</span>
+                        </button>
+                    </div>
                 </div>
 
-                <!-- Tab: Table -->
+                <!-- Tab 1: Detailed Rows & Manual Editor -->
                 <div class="tab-content active" id="tab-table">
                     <div class="table-toolbar">
                         <div class="search-box">
-                            <span>🔍</span>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted);"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                             <input type="text" id="table-search-input" placeholder="Search description, item no, section..." oninput="onFilterChange()">
                         </div>
                         
                         <div class="filter-pills">
                             <button class="filter-pill active" id="filter-all" onclick="setFilterMode('all')">All (<span id="count-all">0</span>)</button>
-                            <button class="filter-pill" id="filter-mismatch" onclick="setFilterMode('mismatch')">⚠️ Mismatches (<span id="count-mismatch">0</span>)</button>
+                            <button class="filter-pill" id="filter-mismatch" onclick="setFilterMode('mismatch')">⚠️ Discrepancies (<span id="count-mismatch">0</span>)</button>
                             <button class="filter-pill" id="filter-valid" onclick="setFilterMode('valid')">✓ Valid (<span id="count-valid">0</span>)</button>
                         </div>
 
-                        <select id="section-select-filter" class="form-control" style="max-width:180px; padding:0.45rem 0.6rem; font-size:0.825rem;" onchange="onFilterChange()">
+                        <select id="section-select-filter" class="form-control" style="max-width:180px; padding:0.4rem 0.6rem; font-size:0.8rem;" onchange="onFilterChange()">
                             <option value="">All Sections</option>
                         </select>
 
-                        <div style="display:flex; gap:0.5rem; margin-left:auto; align-items:center;">
+                        <div style="display:flex; gap:0.45rem; margin-left:auto; align-items:center;">
                             <button class="tbl-btn btn-autofix" style="padding:0.45rem 0.85rem; font-weight:700;" onclick="autoFixAllMismatches()">
                                 ⚡ Auto-Fix All Discrepancies
                             </button>
                             <button class="tbl-btn btn-accept" style="padding:0.45rem 0.85rem; font-weight:700;" onclick="addNewItemRow()">
-                                + Add Custom Row
+                                + Add Row
                             </button>
                         </div>
                     </div>
@@ -1377,14 +1735,14 @@
                         <table>
                             <thead>
                                 <tr>
-                                    <th style="width: 85px;">Item No.</th>
+                                    <th style="width: 80px;">Item No.</th>
                                     <th style="width: 90px;">Section</th>
                                     <th>Description</th>
-                                    <th style="width: 105px; text-align:right;">Quantity</th>
+                                    <th style="width: 100px; text-align:right;">Quantity</th>
                                     <th style="width: 75px;">Unit</th>
-                                    <th style="width: 115px; text-align:right;">Rate</th>
+                                    <th style="width: 110px; text-align:right;">Rate</th>
                                     <th style="width: 125px; text-align:right;">Amount</th>
-                                    <th style="width: 165px; text-align:center;">Status / Actions</th>
+                                    <th style="width: 160px; text-align:center;">Status / Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="detailed-table-body"></tbody>
@@ -1392,11 +1750,11 @@
                     </div>
                 </div>
 
-                <!-- Tab: Issues -->
+                <!-- Tab 2: Validation Issues & Discrepancies -->
                 <div class="tab-content" id="tab-issues">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap; gap:0.75rem;">
-                        <p style="margin:0; color:var(--text-secondary); font-size:0.875rem;">
-                            Items with arithmetic discrepancies between <code>Quantity × Rate</code> and <code>Amount</code>. You can review side-by-side and resolve individually or auto-fix all in one click.
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.15rem; flex-wrap:wrap; gap:0.75rem;">
+                        <p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">
+                            Items with arithmetic discrepancies between <code>Quantity × Rate</code> and <code>Amount</code>. You can review side-by-side and resolve individually or auto-fix in one click.
                         </p>
                         <button class="tbl-btn btn-autofix" style="padding:0.5rem 1.15rem; font-weight:700;" onclick="autoFixAllMismatches()">
                             ⚡ Auto-Fix All Discrepancies
@@ -1405,22 +1763,24 @@
                     <div id="validation-issues-container"></div>
                 </div>
 
-                <!-- Tab: HTML Report -->
-                <div class="tab-content" id="tab-html-report">
-                    <div class="card" style="padding: 0; overflow: hidden; height: 800px; border-radius: 1rem;">
-                        <iframe id="html-report-frame" style="width: 100%; height: 100%; border: none; background: #0d1117;"></iframe>
-                    </div>
-                </div>
-
-                <!-- Tab: Hierarchy -->
+                <!-- Tab 3: Hierarchy Tree -->
                 <div class="tab-content" id="tab-hierarchy">
                     <div class="card">
-                        <h3 class="section-title">Nested Section Tree</h3>
+                        <div class="card-header-row">
+                            <h3 class="section-title">Nested Bill of Quantities Structure</h3>
+                        </div>
                         <div id="hierarchy-tree-container"></div>
                     </div>
                 </div>
 
-                <!-- Tab: Raw (Bounded Box) -->
+                <!-- Tab 4: Interactive Report -->
+                <div class="tab-content" id="tab-html-report">
+                    <div class="card" style="padding: 0; overflow: hidden; height: 780px; border-radius: var(--border-radius-lg);">
+                        <iframe id="html-report-frame" style="width: 100%; height: 100%; border: none; background: #090D16;"></iframe>
+                    </div>
+                </div>
+
+                <!-- Tab 5: STRICTLY BOUNDED Raw JSON (output.json Blueprint) -->
                 <div class="tab-content" id="tab-raw">
                     <div class="json-viewer-container">
                         <div class="json-viewer-header">
@@ -1430,13 +1790,16 @@
                                 <span class="json-stats-badge" id="json-stats-badge">Blueprint Schema • 0 Items</span>
                             </div>
                             <div class="json-actions">
+                                <button class="btn-json-action" onclick="toggleJsonWrap()" id="btn-toggle-wrap" title="Toggle line wrapping">
+                                    <span id="wrap-text">⤷ Unwrap (Scroll)</span>
+                                </button>
                                 <button class="btn-json-action" onclick="copyRawJson()" id="btn-copy-json" title="Copy raw JSON to clipboard">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                                     <span id="copy-json-text">Copy JSON</span>
                                 </button>
                                 <button class="btn-json-action primary" onclick="downloadBlueprintJson()" title="Download output.json">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                    Download JSON
+                                    Download output.json
                                 </button>
                             </div>
                         </div>
@@ -1446,11 +1809,13 @@
             </div>
         </div>
     </main>
+
     <div class="toast-container" id="toast-container"></div>
 
     <script>
         let currentFile = null;
         let currentParseResult = null;
+        let isJsonWrapped = true;
 
         // On load
         window.addEventListener('DOMContentLoaded', async () => {
@@ -1467,15 +1832,15 @@
                 const data = await res.json();
                 dot.className = 'status-dot online';
                 
-                let llmStatus = data.ollama_connected ? `LLM: ${data.ollama_model} active` : 'LLM: heuristic fallback';
-                txt.textContent = `Online (${data.ocr_mode}) | ${llmStatus}`;
+                let llmStatus = data.ollama_connected ? `Ollama (${data.ollama_model})` : 'Fallback Heuristics';
+                txt.textContent = `Online | ${llmStatus}`;
                 
                 const badge = document.getElementById('ollama-status-badge');
                 if (badge) {
                     if (data.ollama_connected) {
                         badge.innerHTML = `<span style="color:var(--brand-success); font-weight:600;">✓ Connected to Ollama (${data.ollama_model})</span>`;
                     } else {
-                        badge.innerHTML = `<span style="color:#f59e0b; font-weight:500;">⚠️ Ollama offline at ${data.ollama_host || 'localhost:11434'} (runs heuristic mode)</span>`;
+                        badge.innerHTML = `<span style="color:#F59E0B; font-weight:500;">⚠️ Ollama offline at ${data.ollama_host || 'localhost:11434'} (runs heuristic mode)</span>`;
                     }
                 }
                 
@@ -1495,7 +1860,6 @@
             const dropzone = document.getElementById('dropzone');
             const fileInput = document.getElementById('file-input');
 
-            // Handle drag & drop
             ['dragenter', 'dragover'].forEach(eventName => {
                 dropzone.addEventListener(eventName, (e) => {
                     e.preventDefault();
@@ -1520,7 +1884,7 @@
                 if (fileInput.files.length) handleFile(fileInput.files[0]);
             });
 
-            // DPI range slider update
+            // DPI slider update
             const dpiRange = document.getElementById('dpi-range');
             const dpiVal = document.getElementById('dpi-val');
             dpiRange.addEventListener('input', () => {
@@ -1531,7 +1895,7 @@
         // Handle selected file
         async function handleFile(file) {
             if (file.type !== 'application/pdf') {
-                alert('Please upload a PDF document.');
+                showToast('Please upload a valid PDF document.', 'danger');
                 return;
             }
             currentFile = file;
@@ -1570,22 +1934,26 @@
 
                 currentParseResult = await response.json();
 
-                // Fetch HTML report
-                const htmlResponse = await fetch('/extract/html', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (htmlResponse.ok) {
-                    const htmlText = await htmlResponse.text();
-                    const frame = document.getElementById('html-report-frame');
-                    frame.srcdoc = htmlText;
+                // Fetch HTML report in parallel
+                try {
+                    const htmlResponse = await fetch('/extract/html', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (htmlResponse.ok) {
+                        const htmlText = await htmlResponse.text();
+                        const frame = document.getElementById('html-report-frame');
+                        frame.srcdoc = htmlText;
+                    }
+                } catch (e) {
+                    console.warn('HTML report generation preview skipped', e);
                 }
 
                 displayResults(currentParseResult);
                 switchTab('tab-table');
             } catch (err) {
-                alert(`Error: ${err.message}`);
+                showToast(`Extraction error: ${err.message}`, 'danger');
                 resetUI();
             }
         }
@@ -1614,9 +1982,17 @@
             document.getElementById('processing-card').style.display = 'none';
             document.getElementById('results-container').style.display = 'flex';
             document.getElementById('export-card').style.display = 'block';
+            document.getElementById('header-download-btn').style.display = 'flex';
 
-            document.getElementById('meta-project-name').textContent = data.project_name || 'General';
-            document.getElementById('meta-report-type').textContent = data.report_type || 'BOQ Report';
+            // Top Document Chip in Header
+            const docChip = document.getElementById('header-doc-chip');
+            docChip.style.display = 'flex';
+            document.getElementById('header-doc-name').textContent = currentFile ? currentFile.name : (data.project_name || 'Document');
+            const pageCount = (data.pages && data.pages.length) ? `${data.pages.length} Pages` : 'Digital PDF';
+            document.getElementById('header-doc-pages').textContent = pageCount;
+
+            document.getElementById('meta-project-name').textContent = data.project_name || (currentFile ? currentFile.name.replace('.pdf', '') : 'General Project');
+            document.getElementById('meta-report-type').textContent = `${data.report_type || 'BOQ Report'} • ${pageCount}`;
             toleranceVal = parseFloat(document.getElementById('tolerance').value) || 0.02;
 
             // Map issues for fast lookup
@@ -1767,18 +2143,46 @@
             const validCount = totalItems - mismatchCount;
             const validRate = totalItems > 0 ? ((validCount / totalItems) * 100).toFixed(1) : '100';
 
-            // Update Metric Cards
+            // Distinct Sections count
+            const distinctSecs = new Set(editableItems.map(it => it.section_code)).size;
+
+            // Update KPI Metric Cards
+            document.getElementById('kpi-total-items').textContent = `${totalItems.toLocaleString()} Items`;
+            document.getElementById('kpi-section-count').textContent = `${distinctSecs} Sections Active`;
             document.getElementById('meta-grand-total').textContent = `Rs. ${grandTotal.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             document.getElementById('meta-validation-rate').textContent = `${validRate}%`;
             
-            const validityCard = document.getElementById('overview-validity');
-            validityCard.className = mismatchCount > 0 ? 'overview-metric danger' : 'overview-metric success';
+            const progressBar = document.getElementById('kpi-progress-bar');
+            if (progressBar) {
+                progressBar.style.width = `${validRate}%`;
+                progressBar.style.backgroundColor = mismatchCount > 0 ? '#F59E0B' : '#10B981';
+            }
+
+            const disSub = document.getElementById('kpi-discrepancy-sub');
+            if (disSub) {
+                disSub.textContent = mismatchCount > 0 ? `${mismatchCount} Discrepancies Require Review` : 'All Rows Fully Reconciled';
+            }
+
+            const recCard = document.getElementById('kpi-reconciliation-card');
+            if (recCard) {
+                recCard.className = mismatchCount > 0 ? 'kpi-card amber' : 'kpi-card emerald';
+            }
 
             // Update Counts and Badges
             document.getElementById('count-all').textContent = totalItems;
             document.getElementById('count-mismatch').textContent = mismatchCount;
             document.getElementById('count-valid').textContent = validCount;
-            document.getElementById('issues-count').textContent = mismatchCount;
+            document.getElementById('tab-badge-table-count').textContent = totalItems;
+            document.getElementById('tab-badge-issues-count').textContent = mismatchCount;
+
+            const issuesTabBtn = document.getElementById('tab-btn-issues');
+            if (issuesTabBtn) {
+                if (mismatchCount > 0) {
+                    issuesTabBtn.style.color = '#FBBF24';
+                } else {
+                    issuesTabBtn.style.color = '';
+                }
+            }
 
             updateRawJsonDisplay();
         }
@@ -1804,7 +2208,7 @@
 
             if (visibleItems.length === 0) {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td colspan="8" style="text-align:center; padding:2rem; color:var(--text-muted);">No items match the current filter or search criteria.</td>`;
+                tr.innerHTML = `<td colspan="8" style="text-align:center; padding:2.5rem; color:var(--text-muted); font-size:0.875rem;">No items match the current search or filter criteria.</td>`;
                 tableBody.appendChild(tr);
                 return;
             }
@@ -1820,7 +2224,7 @@
 
                 tr.innerHTML = `
                     <td>
-                        <input type="text" class="tbl-input" style="width:75px; font-weight:600;" 
+                        <input type="text" class="tbl-input" style="width:75px; font-weight:700; font-family:var(--font-mono);" 
                                value="${escapeHtml(it.item_no)}" 
                                oninput="onCellEdit(${idx}, 'item_no', this.value)">
                     </td>
@@ -1832,7 +2236,7 @@
                                   oninput="onCellEdit(${idx}, 'description', this.value)">${escapeHtml(it.description)}</textarea>
                     </td>
                     <td>
-                        <input type="number" step="any" class="tbl-input" style="width:90px; text-align:right;" 
+                        <input type="number" step="any" class="tbl-input" style="width:90px; text-align:right; font-family:var(--font-mono);" 
                                value="${qtyVal}" 
                                oninput="onCellEdit(${idx}, 'quantity', this.value)">
                     </td>
@@ -1842,13 +2246,13 @@
                                oninput="onCellEdit(${idx}, 'unit', this.value)">
                     </td>
                     <td>
-                        <input type="number" step="any" class="tbl-input" style="width:95px; text-align:right;" 
+                        <input type="number" step="any" class="tbl-input" style="width:95px; text-align:right; font-family:var(--font-mono);" 
                                value="${rateVal}" 
                                id="cell-rate-${idx}"
                                oninput="onCellEdit(${idx}, 'rate', this.value)">
                     </td>
                     <td>
-                        <input type="number" step="any" class="tbl-input" style="width:110px; text-align:right; font-weight:600;" 
+                        <input type="number" step="any" class="tbl-input" style="width:110px; text-align:right; font-weight:700; font-family:var(--font-mono); color:#60A5FA;" 
                                value="${amtVal}" 
                                id="cell-amt-${idx}"
                                oninput="onCellEdit(${idx}, 'amount', this.value)">
@@ -1865,7 +2269,7 @@
                             ` : `
                                 <span class="badge-success">✓ Valid</span>
                             `}
-                            <button class="tbl-btn" style="background:rgba(239,68,68,0.15); color:var(--brand-danger);" title="Delete Row" onclick="deleteItemRow(${idx})">
+                            <button class="tbl-btn" style="background:rgba(239,68,68,0.12); color:#F87171; border-color:rgba(239,68,68,0.3);" title="Delete Row" onclick="deleteItemRow(${idx})">
                                 ✕
                             </button>
                         </div>
@@ -1948,7 +2352,7 @@
             recalculateMetricsAndState();
             renderTable();
             renderIssuesTab();
-            showToast('Item deleted.', 'info');
+            showToast('Item removed.', 'info');
         }
 
         // Add a custom item row
@@ -1973,7 +2377,7 @@
             editableItems.unshift(newItem);
             recalculateMetricsAndState();
             renderTable();
-            showToast('New custom row added.', 'success');
+            showToast('Custom row added.', 'success');
         }
 
         // Auto-fix all detected arithmetic mismatches in batch
@@ -1998,7 +2402,7 @@
             recalculateMetricsAndState();
             renderTable();
             renderIssuesTab();
-            showToast(`Successfully auto-fixed ${fixedCount} discrepancies!`, 'success');
+            showToast(`Auto-reconciled ${fixedCount} discrepancies!`, 'success');
         }
 
         // Filter Pills toggle
@@ -2024,11 +2428,11 @@
 
             if (mismatchItems.length === 0) {
                 issuesContainer.innerHTML = `
-                    <div style="padding:2.5rem 2rem; text-align:center; color:var(--brand-success); font-weight:700; background:rgba(16,185,129,0.08); border-radius:0.75rem; border:1px solid rgba(16,185,129,0.3); display:flex; flex-direction:column; align-items:center; gap:0.5rem;">
-                        <span style="font-size:2rem;">🎉</span>
-                        <div style="font-size:1.1rem;">All Items are 100% Reconciled!</div>
-                        <div style="font-size:0.85rem; color:var(--text-secondary); font-weight:400; max-width:500px;">
-                            Zero arithmetic discrepancies remaining between rates, quantities, and totals across the entire bill.
+                    <div style="padding:3rem 2rem; text-align:center; color:var(--brand-success); font-weight:700; background:rgba(16,185,129,0.06); border-radius:var(--border-radius-lg); border:1px solid rgba(16,185,129,0.25); display:flex; flex-direction:column; align-items:center; gap:0.6rem;">
+                        <span style="font-size:2.2rem;">🎉</span>
+                        <div style="font-size:1.15rem; color:#FFFFFF;">100% Mathematical Reconciliation Achieved</div>
+                        <div style="font-size:0.85rem; color:var(--text-secondary); font-weight:400; max-width:540px;">
+                            Zero arithmetic discrepancies remain across rates, quantities, and totals. All items match the output.json blueprint.
                         </div>
                     </div>`;
                 return;
@@ -2056,7 +2460,7 @@
                     </div>
 
                     <div style="color:var(--text-secondary); font-size:0.85rem; line-height:1.45;">
-                        <strong style="color:var(--text-primary);">${escapeHtml(item.description || 'No description')}</strong>
+                        <strong style="color:#FFFFFF;">${escapeHtml(item.description || 'No description')}</strong>
                     </div>
 
                     <div class="issue-comparison-grid">
@@ -2076,7 +2480,7 @@
                                 Rs. ${docAmt.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                             </div>
                             <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">
-                                From PDF parsed table cell
+                                From PDF table cell
                             </div>
                         </div>
                     </div>
@@ -2134,7 +2538,7 @@
             const blueprint = buildBlueprintJson();
             const jsonStr = JSON.stringify(blueprint, null, 2);
 
-            // Trigger client browser download
+            // Client browser trigger download
             const blob = new Blob([jsonStr], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -2153,12 +2557,12 @@
                     body: jsonStr
                 });
                 if (res.ok) {
-                    showToast('✓ output.json downloaded and saved to disk!', 'success');
+                    showToast('✓ output.json downloaded & synchronized to project root!', 'success');
                 } else {
-                    showToast('output.json downloaded (server sync had minor issue)', 'info');
+                    showToast('✓ output.json downloaded successfully!', 'info');
                 }
             } catch (err) {
-                showToast('output.json downloaded successfully!', 'success');
+                showToast('✓ output.json downloaded successfully!', 'success');
             }
         }
 
@@ -2179,6 +2583,22 @@
                 }
             } catch (err) {
                 showToast(`Save error: ${err.message}`, 'danger');
+            }
+        }
+
+        // Toggle line wrapping in Raw JSON viewer
+        function toggleJsonWrap() {
+            const raw = document.getElementById('raw-json-display');
+            const wrapText = document.getElementById('wrap-text');
+            isJsonWrapped = !isJsonWrapped;
+            if (isJsonWrapped) {
+                raw.style.whiteSpace = 'pre-wrap';
+                raw.style.wordBreak = 'break-all';
+                wrapText.textContent = '⤷ Unwrap (Scroll)';
+            } else {
+                raw.style.whiteSpace = 'pre';
+                raw.style.wordBreak = 'normal';
+                wrapText.textContent = '⤶ Wrap Lines';
             }
         }
 
@@ -2275,7 +2695,7 @@
             if (sec.items && sec.items.length > 0) {
                 const itemsList = document.createElement('div');
                 itemsList.style.padding = '0.5rem 1rem';
-                itemsList.style.fontSize = '0.825rem';
+                itemsList.style.fontSize = '0.8rem';
                 itemsList.style.color = 'var(--text-secondary)';
                 
                 sec.items.forEach(item => {
@@ -2312,7 +2732,7 @@
                         
                         itemDiv.innerHTML = `
                             <span>${itemNo}${desc}</span>
-                            <span>${formula}<strong>Rs.${formattedAmt}</strong></span>
+                            <span style="font-family:var(--font-mono);">${formula}<strong style="color:#60A5FA;">Rs.${formattedAmt}</strong></span>
                         `;
                         itemsList.appendChild(itemDiv);
                     }
@@ -2345,15 +2765,17 @@
         function switchTab(tabId) {
             const tabs = ['tab-html-report', 'tab-hierarchy', 'tab-table', 'tab-issues', 'tab-raw'];
             tabs.forEach(t => {
-                document.getElementById(t).classList.remove('active');
+                const el = document.getElementById(t);
+                if (el) el.classList.remove('active');
             });
-            document.getElementById(tabId).classList.add('active');
+            const target = document.getElementById(tabId);
+            if (target) target.classList.add('active');
 
             // Set active class on buttons
             const btns = document.querySelectorAll('.tab-btn');
             btns.forEach(btn => {
                 btn.classList.remove('active');
-                if (btn.getAttribute('onclick').includes(tabId)) {
+                if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(tabId)) {
                     btn.classList.add('active');
                 }
             });
@@ -2367,6 +2789,8 @@
             document.getElementById('upload-card').style.display = 'block';
             document.getElementById('results-container').style.display = 'none';
             document.getElementById('export-card').style.display = 'none';
+            document.getElementById('header-download-btn').style.display = 'none';
+            document.getElementById('header-doc-chip').style.display = 'none';
             document.getElementById('html-report-frame').srcdoc = '';
         }
 
@@ -2392,18 +2816,17 @@
                 const a = document.createElement('a');
                 a.href = url;
                 
-                // Get filename prefix
                 const prefix = currentFile.name.substring(0, currentFile.name.lastIndexOf('.')) || 'boq_report';
                 a.download = `${prefix}.${fmt === 'excel' ? 'xlsx' : fmt}`;
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
             } catch (err) {
-                alert(`Export error: ${err.message}`);
+                showToast(`Export error: ${err.message}`, 'danger');
             }
         }
 
-        // Open beautiful HTML report
+        // Open beautiful HTML report in new tab
         async function openHtmlReport() {
             if (!currentFile) return;
             
@@ -2413,7 +2836,7 @@
             try {
                 const newWindow = window.open();
                 if (!newWindow) {
-                    alert('Pop-up blocked! Please allow popups for this site.');
+                    showToast('Pop-up blocked! Please allow popups for this site.', 'warning');
                     return;
                 }
                 newWindow.document.write('<h3>Generating HTML report, please wait...</h3>');
@@ -2430,7 +2853,7 @@
                 newWindow.document.write(htmlText);
                 newWindow.document.close();
             } catch (err) {
-                alert(`HTML Generation error: ${err.message}`);
+                showToast(`HTML Generation error: ${err.message}`, 'danger');
             }
         }
     </script>
