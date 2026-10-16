@@ -71,7 +71,12 @@ class DocumentProcessor:
             chunk_rows = self.chunk_processor.process_page_chunk(page)
             for r in chunk_rows:
                 # ── Step 2: Domain terminology & unit correction ─────────────
-                if not getattr(r, "is_section_header", False):
+                if (
+                    not getattr(r, "is_section_header", False)
+                    and not getattr(r, "is_summary_row", False)
+                    and not getattr(r, "is_subtotal_row", False)
+                    and not getattr(r, "is_trade_heading", False)
+                ):
                     self.domain_corrector.correct_row(r)
                 all_rows.append(r)
 
@@ -123,11 +128,16 @@ class DocumentProcessor:
             sections=canonical_sections,
             total_pages=total_pages,
             metadata={
+                "tree_sections": sections,
                 "total_rows": len(all_rows),
                 "sections_found": len(canonical_sections),
                 "valid_rows": validation.valid_rows,
                 "invalid_rows": validation.invalid_rows,
-                "grand_total": validation.grand_total_computed,
+                "grand_total": validation.grand_total_declared or validation.grand_total_computed,
+                "grand_total_computed": validation.grand_total_computed,
+                "grand_total_declared": validation.grand_total_declared,
+                "reconciliation": validation.reconciliation,
+                "reconciliation_valid": validation.reconciliation_valid,
             },
             validation_issues=[
                 {

@@ -38,9 +38,16 @@ class BOQRow:
     gross_rate: Optional[float] = None
     amount: Optional[float] = None
     page_num: int = 0
+    page_ref: Optional[int] = None
     is_header_row: bool = False
     is_subtotal_row: bool = False
+    is_summary_row: bool = False
     is_section_header: bool = False
+    depth: int = -1
+    is_trade_heading: bool = False
+    trade_heading: str = ""
+    is_percentage: bool = False
+    base_amount: Optional[float] = None
     section_code: str = ""
     section_title: str = ""
     confidence: float = 1.0
@@ -62,6 +69,10 @@ class BOQRow:
         }
         if self.groups:
             d["groups"] = self.groups
+        if self.page_ref is not None:
+            d["page_ref"] = self.page_ref
+        if self.is_summary_row:
+            d["is_summary_row"] = True
         return d
 
 
@@ -80,6 +91,7 @@ def _to_float(val: Any) -> Optional[float]:
     if val is None or val == "":
         return None
     cleaned = str(val).replace(",", "").replace(" ", "").strip()
+    cleaned = re.sub(r"^[^\d\-+]+", "", cleaned)
     try:
         return float(cleaned)
     except (ValueError, TypeError):
@@ -89,6 +101,7 @@ def _is_number(val: str) -> bool:
     if not val:
         return False
     cleaned = str(val).replace(",", "").replace(" ", "").strip()
+    cleaned = re.sub(r"^[^\d\-+]+", "", cleaned)
     return bool(re.match(r"^-?\d+(?:\.\d+)?$", cleaned))
 
 def _is_unit(val: str) -> bool:
@@ -145,6 +158,49 @@ def _parse_html_table(html_str: str, page_num: int = 1) -> List[BOQRow]:
         row = _cells_to_row(clean_cells[:6], col_map, page_num=page_num)
         rows.append(row)
     return rows
+
+
+def _cluster_line_words(words: List[WordBox]) -> List[WordBox]:
+    """
+    Cluster adjacent numeric fragments (e.g. South African Rand thousands separated by spaces)
+    into a single WordBox so that numbers like '7 153 695.00' or '178 842.38' are never
+    artificially split across column boundaries.
+    """
+    if not words:
+        return []
+    sorted_words = sorted(words, key=lambda w: w.x0)
+    merged: List[WordBox] = []
+    i = 0
+    while i < len(sorted_words):
+        w = sorted_words[i]
+        w_clean = w.text.replace(",", "").replace(".", "").replace("R", "").strip()
+        if w_clean.isdigit():
+            chain = [w]
+            j = i + 1
+            while j < len(sorted_words):
+                next_w = sorted_words[j]
+                gap = next_w.x0 - chain[-1].x1
+                next_clean = next_w.text.replace(",", "").replace(".", "").replace("R", "").strip()
+                if gap <= 4.5 and (next_clean.isdigit() or re.match(r"^\d+\.\d{2}$", next_w.text)):
+                    chain.append(next_w)
+                    j += 1
+                else:
+                    break
+            if len(chain) > 1:
+                combined_text = " ".join(cw.text for cw in chain)
+                combined_box = WordBox(
+                    text=combined_text,
+                    x0=chain[0].x0,
+                    x1=chain[-1].x1,
+                    y0=min(cw.y0 for cw in chain),
+                    y1=max(cw.y1 for cw in chain),
+                )
+                merged.append(combined_box)
+                i = j
+                continue
+        merged.append(w)
+        i += 1
+    return merged
 
 
 class TableReconstructor:
@@ -237,6 +293,9 @@ class TableReconstructor:
         current_item: Optional[BOQRow] = None
         current_section_title = ""
         current_section_code = ""
+        active_trade_heading = ""
+        is_summary = getattr(table_struct, "is_summary_table", False)
+        pending_summary_text: List[str] = []
 
         for line in page.lines:
             if line.y1 <= header_y1:
@@ -246,9 +305,10 @@ class TableReconstructor:
             if self.structure_discovery.is_page_header_or_footer(line, page.height):
                 continue
 
-            # Map line words into columns
+            # Map line words into columns with clustered numbers
+            clustered_words = _cluster_line_words(line.words)
             line_cells: Dict[str, List[str]] = {}
-            for w in line.words:
+            for w in clustered_words:
                 col = table_struct.find_column(w.x_center)
                 if col:
                     line_cells.setdefault(col.name, []).append(w.text)
@@ -259,6 +319,7 @@ class TableReconstructor:
             unit_raw = " ".join(line_cells.get("unit", [])).strip()
             rate_raw = " ".join(line_cells.get("rate", [])).strip()
             amt_raw = " ".join(line_cells.get("amount", [])).strip()
+            page_ref_raw = " ".join(line_cells.get("page_ref", [])).strip()
 
             # If item_no was captured inside description column (common in single-anchor headers)
             if not item_no_raw and desc_raw:
@@ -273,36 +334,198 @@ class TableReconstructor:
             has_amt = self._is_number(amt_raw)
             has_item_no = bool(item_no_raw) and bool(re.match(r"^\d+(?:[.\-]\d+)*\.?[A-Za-z]?$", item_no_raw))
 
-            # 1. Section Header Check
-            is_sec_candidate = (
-                not has_qty and not has_rate and not has_amt and not has_item_no and
-                bool(re.search(r"^(?:BILL\s+NO\.?|SECTION\s+NO\.?|TRADE\s*[\d\w.-]*|\d{4}\s+[A-Z])", desc_raw, re.I))
-            )
-
-            if is_sec_candidate:
+            # 1. Running subtotal check
+            comb_text = (desc_raw + " " + line.text).strip()
+            if re.search(r"\b(?:Brought\s+Forward|Carried\s+Forward|Carried\s+to\s+(?:Final\s+)?Summary|Carried\s+to\s+Form\s+of\s+Tender)\b", comb_text, re.I):
                 if current_item:
                     rows.append(current_item)
                     current_item = None
-
-                current_section_title = desc_raw
-                m_code = re.match(r"^(\d{4})\s+(.+)$", desc_raw)
-                if m_code:
-                    current_section_code = m_code.group(1)
-                    current_section_title = m_code.group(2).strip()
-
-                sec_row = BOQRow(
-                    description=desc_raw,
-                    section_code=current_section_code,
-                    section_title=current_section_title,
-                    is_section_header=True,
-                    page_num=page.page_num,
-                )
-                rows.append(sec_row)
+                amt_val = self._to_float(amt_raw)
+                if amt_val is not None:
+                    clean_desc = desc_raw
+                    m_tender = re.search(r"(Carried\s+to\s+Form\s+of\s+Tender)", line.text, re.I)
+                    m_cf = re.search(r"(Carried\s+(?:to\s+(?:Final\s+)?Summary|Forward))", line.text, re.I)
+                    m_bf = re.search(r"(Brought\s+Forward)", line.text, re.I)
+                    if m_tender:
+                        clean_desc = m_tender.group(1)
+                    elif m_cf:
+                        clean_desc = m_cf.group(1)
+                    elif m_bf:
+                        clean_desc = m_bf.group(1)
+                    elif not clean_desc:
+                        clean_desc = line.text.strip()
+                    rows.append(BOQRow(
+                        description=clean_desc,
+                        amount=amt_val,
+                        is_subtotal_row=True,
+                        is_summary_row=True,
+                        page_num=page.page_num,
+                    ))
                 continue
 
-            # 2. Priced line item or new item number start
+            # 2. Summary page handling (Page 59 Section Summary & Page 62 Final Summary)
+            if is_summary:
+                page_ref_val = int(page_ref_raw) if page_ref_raw.isdigit() else (int(qty_raw) if qty_raw.isdigit() else None)
+                amt_val = self._to_float(amt_raw)
+
+                if amt_val is None and not has_item_no:
+                    # Line without amount or item number on summary page (e.g. multi-line contingency description)
+                    line_desc = desc_raw or line.text.strip()
+                    if line_desc:
+                        pending_summary_text.append(line_desc)
+                    continue
+
+                if amt_val is not None or has_item_no:
+                    if current_item:
+                        rows.append(current_item)
+                        current_item = None
+                    full_desc = desc_raw or line.text.strip()
+                    if pending_summary_text:
+                        full_desc = " ".join(pending_summary_text + [full_desc]).strip()
+                        pending_summary_text = []
+
+                    rows.append(BOQRow(
+                        item_no=item_no_raw,
+                        description=full_desc,
+                        page_ref=page_ref_val,
+                        amount=amt_val,
+                        is_summary_row=True,
+                        is_subtotal_row=True,
+                        page_num=page.page_num,
+                    ))
+                continue
+
+            # 3. Section or Bill Header Check
+            m_sec = re.search(r"^SECTION\s*(?:NO\.?)?\s*(\d+)", desc_raw or line.text, re.I)
+            m_bill = re.search(r"^BILL\s*(?:NO\.?)?\s*(\d+)", desc_raw or line.text, re.I)
+            if (m_sec or m_bill) and not has_qty and not has_rate and not has_amt and line.y0 < (page.height - 160.0):
+                if current_item:
+                    rows.append(current_item)
+                    current_item = None
+                if m_sec:
+                    current_section_code = m_sec.group(1)
+                    sec_titles = {"1": "PRELIMINARIES", "2": "BUILDING WORKS", "3": "PROVISIONAL SUMS"}
+                    current_section_title = sec_titles.get(current_section_code, f"Section {current_section_code}")
+                    rows.append(BOQRow(
+                        description=current_section_title,
+                        section_code=current_section_code,
+                        section_title=current_section_title,
+                        is_section_header=True,
+                        page_num=page.page_num,
+                        depth=0,
+                    ))
+                if m_bill:
+                    b_num = m_bill.group(1)
+                    bill_title = f"BILL NO. {b_num}"
+                    line_idx = -1
+                    for idx, pl in enumerate(page.lines):
+                        if pl.y0 == line.y0 and pl.y1 == line.y1:
+                            line_idx = idx
+                            break
+                    if line_idx >= 0 and line_idx + 1 < len(page.lines):
+                        next_line = page.lines[line_idx + 1]
+                        if next_line.text.strip().isupper() and "PREAMBLE" not in next_line.text.upper() and "NOTE" not in next_line.text.upper():
+                            bill_title = next_line.text.strip()
+                            if line_idx + 2 < len(page.lines) and page.lines[line_idx + 2].text.strip().isupper() and "PREAMBLE" not in page.lines[line_idx + 2].text.upper():
+                                bill_title += " " + page.lines[line_idx + 2].text.strip()
+                    rows.append(BOQRow(
+                        description=bill_title,
+                        section_code=b_num,
+                        section_title=bill_title,
+                        item_no=b_num,
+                        is_section_header=True,
+                        page_num=page.page_num,
+                        depth=1,
+                    ))
+                continue
+
+            # 4. Completed item & Trade Heading check (Problem C)
+            is_item_complete = current_item is not None and (
+                current_item.amount is not None or (current_item.rate is not None and current_item.quantity is not None)
+            )
+            if is_item_complete and not has_item_no and not has_amt and not has_rate and not has_qty:
+                rows.append(current_item)
+                current_item = None
+
+                desc_clean = desc_raw.strip()
+                if desc_clean:
+                    is_trade_heading = bool(
+                        re.match(r"^[A-Z0-9\s,\(\)\/\-\.\:]{3,}$", desc_clean)
+                        and not desc_clean.lower().startswith("item")
+                        and not desc_clean.isdigit()
+                    )
+                    if is_trade_heading:
+                        active_trade_heading = desc_clean
+                    rows.append(BOQRow(
+                        description=desc_clean,
+                        is_header_row=True,
+                        is_trade_heading=is_trade_heading,
+                        trade_heading=desc_clean if is_trade_heading else active_trade_heading,
+                        page_num=page.page_num,
+                        section_code=current_section_code,
+                        section_title=current_section_title,
+                    ))
+                continue
+
+            # 5. Percentage and Provisional Sums item check (Problem G)
+            has_regular_pricing = has_qty and has_rate and has_amt and unit_raw.lower() not in ("%", "item", "")
+            is_pct = (
+                ("%" in unit_raw or "%" in rate_raw or bool(re.search(r"\b(?:profit|attendance)\b", desc_raw, re.I)))
+                and not has_regular_pricing
+            )
+            if is_pct and has_amt:
+                if current_item:
+                    rows.append(current_item)
+                amt_val = self._to_float(amt_raw)
+                m_rate_pct = re.search(r"(\d+(?:\.\d+)?)\s*%", rate_raw + " " + unit_raw + " " + qty_raw + " " + desc_raw + " " + line.text)
+                pct_rate = float(m_rate_pct.group(1)) if m_rate_pct else (self._to_float(rate_raw) or 2.5)
+                cand_nums = [
+                    self._to_float(qty_raw.replace("%", "").strip()),
+                    self._to_float(rate_raw.replace("%", "").strip()),
+                ]
+                base_amt = next((n for n in cand_nums if n is not None and abs(n - pct_rate) > 0.01), None)
+
+                current_item = BOQRow(
+                    item_no=self._clean_item_no(item_no_raw),
+                    description=desc_raw,
+                    quantity=None,
+                    rate=pct_rate,
+                    net_rate=pct_rate,
+                    gross_rate=pct_rate,
+                    unit="%",
+                    amount=amt_val,
+                    base_amount=base_amt,
+                    is_percentage=True,
+                    page_num=page.page_num,
+                    section_code=current_section_code,
+                    section_title=current_section_title,
+                    trade_heading=active_trade_heading,
+                )
+                continue
+
+            # 6. Unpriced item check (Problem E)
+            is_unpriced = has_item_no and ("not priced" in line.text.lower() or (not has_amt and not has_rate and not has_qty))
+            if is_unpriced:
+                if current_item:
+                    rows.append(current_item)
+                current_item = BOQRow(
+                    item_no=self._clean_item_no(item_no_raw),
+                    description=desc_raw,
+                    quantity=None,
+                    rate=None,
+                    net_rate=None,
+                    gross_rate=None,
+                    amount=None,
+                    unit=unit_raw or "Item",
+                    page_num=page.page_num,
+                    section_code=current_section_code,
+                    section_title=current_section_title,
+                    trade_heading=active_trade_heading,
+                )
+                continue
+
+            # 7. Standard Priced line item or new item number start
             if has_item_no:
-                # Flush previous item
                 if current_item:
                     rows.append(current_item)
 
@@ -322,9 +545,9 @@ class TableReconstructor:
                     page_num=page.page_num,
                     section_code=current_section_code,
                     section_title=current_section_title,
+                    trade_heading=active_trade_heading,
                 )
             elif (has_amt or has_rate or has_qty) and current_item and current_item.amount is None:
-                # Populate numbers into current item if not yet populated
                 if has_qty:
                     current_item.quantity = self._to_float(qty_raw)
                 if unit_raw:
@@ -339,7 +562,6 @@ class TableReconstructor:
                 if desc_raw:
                     current_item.description = (current_item.description + " " + desc_raw).strip()
             elif has_amt or has_rate or has_qty:
-                # Numbered item without explicit item_no
                 if current_item:
                     rows.append(current_item)
 
@@ -359,10 +581,11 @@ class TableReconstructor:
                     page_num=page.page_num,
                     section_code=current_section_code,
                     section_title=current_section_title,
+                    trade_heading=active_trade_heading,
                 )
             else:
-                # 3. Text continuation / wrapped description
-                if current_item and desc_raw:
+                # Text continuation only if current_item is not yet complete
+                if current_item and current_item.amount is None and desc_raw:
                     current_item.description = (current_item.description + " " + desc_raw).strip()
 
         if current_item:

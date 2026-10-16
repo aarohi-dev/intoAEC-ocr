@@ -52,6 +52,18 @@ class ParseResult:
     validation_summary: ValidationSummary
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def grand_total_computed(self) -> float:
+        return self.validation_summary.grand_total_computed if self.validation_summary else 0.0
+
+    @property
+    def grand_total_declared(self) -> Optional[float]:
+        return self.validation_summary.grand_total_declared if self.validation_summary else None
+
+    @property
+    def reconciliation(self) -> Dict[str, Any]:
+        return getattr(self.validation_summary, "reconciliation", {})
+
     def to_blueprint_dict(self) -> Dict[str, Any]:
         """Convert to the exact dictionary schema matching output.json."""
         from boqparser.export.json_exporter import JSONExporter
@@ -234,39 +246,51 @@ class BOQParser:
         canonical_doc = self.document_processor.process_document(pdf_path, pages=pages)
 
         # Convert CanonicalSection objects to Section for backwards compatibility
-        sections: List[Section] = []
-        all_rows: List[BOQRow] = []
+        if canonical_doc.metadata.get("tree_sections"):
+            sections: List[Section] = canonical_doc.metadata["tree_sections"]
+            all_rows: List[BOQRow] = []
+            for s in sections:
+                all_rows.extend(s.all_items())
+        else:
+            sections: List[Section] = []
+            all_rows: List[BOQRow] = []
+            for c_sec in canonical_doc.sections:
+                sec_items: List[BOQRow] = []
+                for it in c_sec.items:
+                    row = BOQRow(
+                        item_no=it.item_no,
+                        description=it.description,
+                        quantity=it.quantity,
+                        unit=it.unit,
+                        rate=it.net_rate,
+                        net_rate=it.net_rate,
+                        gross_rate=it.gross_rate,
+                        amount=it.amount,
+                        section_code=c_sec.section_code,
+                        section_title=c_sec.section_title,
+                        materials=[m.to_dict() if hasattr(m, "to_dict") else m for m in it.materials],
+                    )
+                    sec_items.append(row)
+                    all_rows.append(row)
 
-        for c_sec in canonical_doc.sections:
-            sec_items: List[BOQRow] = []
-            for it in c_sec.items:
-                row = BOQRow(
-                    item_no=it.item_no,
-                    description=it.description,
-                    quantity=it.quantity,
-                    unit=it.unit,
-                    rate=it.net_rate,
-                    net_rate=it.net_rate,
-                    gross_rate=it.gross_rate,
-                    amount=it.amount,
+                sec = Section(
                     section_code=c_sec.section_code,
                     section_title=c_sec.section_title,
-                    materials=[m.to_dict() if hasattr(m, "to_dict") else m for m in it.materials],
+                    number=c_sec.section_code,
+                    title=c_sec.section_title,
+                    items=sec_items,
+                    subtotal=c_sec.subtotal,
                 )
-                sec_items.append(row)
-                all_rows.append(row)
-
-            sec = Section(
-                section_code=c_sec.section_code,
-                section_title=c_sec.section_title,
-                number=c_sec.section_code,
-                title=c_sec.section_title,
-                items=sec_items,
-                subtotal=c_sec.subtotal,
-            )
-            sections.append(sec)
+                sections.append(sec)
 
         validation = self.validator.validate_all(all_rows, sections)
+        if canonical_doc.metadata.get("reconciliation"):
+            validation.reconciliation = canonical_doc.metadata["reconciliation"]
+            validation.grand_total_declared = canonical_doc.metadata.get("grand_total_declared")
+            validation.reconciliation_valid = canonical_doc.metadata.get("reconciliation_valid", True)
+        if canonical_doc.metadata.get("grand_total_computed"):
+            validation.grand_total_computed = canonical_doc.metadata["grand_total_computed"]
+
         project_name = _extract_project_name(Path(pdf_path).name, pdf_path)
 
         metadata = {
@@ -276,6 +300,11 @@ class BOQParser:
             "total_items": len(all_rows),
             "sections_found": len(sections),
             "validation_issues": validation.invalid_rows,
+            "grand_total": canonical_doc.metadata.get("grand_total") or validation.grand_total_declared or validation.grand_total_computed,
+            "grand_total_computed": canonical_doc.metadata.get("grand_total_computed") or validation.grand_total_computed,
+            "grand_total_declared": canonical_doc.metadata.get("grand_total_declared") or validation.grand_total_declared,
+            "reconciliation": canonical_doc.metadata.get("reconciliation") or validation.reconciliation,
+            "reconciliation_valid": canonical_doc.metadata.get("reconciliation_valid") if "reconciliation_valid" in canonical_doc.metadata else validation.reconciliation_valid,
         }
 
         return ParseResult(

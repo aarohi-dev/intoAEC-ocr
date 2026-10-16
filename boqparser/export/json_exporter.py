@@ -90,9 +90,13 @@ class JSONExporter:
                 item_list = all_items() if callable(all_items) else getattr(sec, "items", [])
 
                 for item in item_list:
-                    if getattr(item, "is_header_row", False) or getattr(item, "is_header", False):
-                        continue
-                    if getattr(item, "is_subtotal_row", False) or getattr(item, "is_subtotal", False):
+                    if (
+                        getattr(item, "is_header_row", False)
+                        or getattr(item, "is_header", False)
+                        or getattr(item, "is_subtotal_row", False)
+                        or getattr(item, "is_subtotal", False)
+                        or getattr(item, "is_summary_row", False)
+                    ):
                         continue
 
                     # Safe numeric extraction

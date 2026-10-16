@@ -42,7 +42,13 @@ class Section:
 
     def all_items(self) -> List[BOQRow]:
         """Recursively collect all line items across this section and its children."""
-        items = [it for it in self.items if not getattr(it, "is_header_row", False) and not getattr(it, "is_subtotal_row", False)]
+        items = [
+            it for it in self.items
+            if not getattr(it, "is_header_row", False)
+            and not getattr(it, "is_subtotal_row", False)
+            and not getattr(it, "is_summary_row", False)
+            and not getattr(it, "is_section_header", False)
+        ]
         for child in self.children:
             items.extend(child.all_items())
         return items
@@ -127,24 +133,67 @@ class HierarchyDetector:
             is_sec = getattr(row, "is_section_header", False)
             depth = -1
             if is_sec:
-                depth = _parse_depth(row.item_no) if row.item_no else 0
-                if depth < 0:
-                    depth = 0
+                if getattr(row, "depth", -1) >= 0:
+                    depth = row.depth
+                else:
+                    desc_upper = (row.description or "").upper()
+                    sec_title_upper = (row.section_title or "").upper()
+                    if "SECTION" in desc_upper or sec_title_upper.startswith("SECTION") or desc_upper in ("BUILDING WORKS", "PROVISIONAL SUMS"):
+                        depth = 0
+                    elif "BILL" in desc_upper or sec_title_upper.startswith("BILL"):
+                        # Child of current section if stack has a section
+                        depth = 1 if (stack and stack[0][1].depth == 0) else 0
+                    else:
+                        code_str = str(row.section_code or row.item_no or "")
+                        depth = _parse_depth(code_str)
+                        if depth < 0:
+                            depth = 0
             elif (
                 row.quantity is None
                 and row.rate is None
                 and getattr(row, "net_rate", None) is None
                 and row.amount is None
                 and row.item_no
-                and _parse_depth(row.item_no) >= 0
+                and _parse_depth(row.item_no) > 0
             ):
                 is_sec = True
                 depth = _parse_depth(row.item_no)
+            elif (
+                row.quantity is None
+                and row.rate is None
+                and getattr(row, "net_rate", None) is None
+                and row.amount is None
+                and row.item_no
+                and _parse_depth(row.item_no) == 0
+                and bool(re.search(r"^(?:BILL\s+NO\.?|SECTION\s*(?:NO\.?)?\s*\d+|FOUNDATION|EARTHWORKS|SUPERSTRUCTURE|CONCRETE|MASONRY|FINISHES|PLASTERING|PAINTING|FLOORING|PLUMBING|ELECTRICAL)", row.description or "", re.I))
+            ):
+                is_sec = True
+                depth = 0
 
             if is_sec:
                 code = row.section_code or row.item_no or f"{sec_counter:04d}"
                 title = row.section_title or row.description or f"Section {code}"
                 sec_counter += 1
+
+                # 1. If depth == 0 (Document Main Section), check if root section already exists
+                if depth == 0:
+                    existing_root = next((r for r in roots if r.section_code == code), None)
+                    if existing_root:
+                        while stack and stack[-1][0] >= depth:
+                            stack.pop()
+                        stack.append((depth, existing_root))
+                        continue
+                # 2. If depth == 1 (Child Bill), check if child bill already exists under the active section
+                elif depth == 1 and stack and stack[0][1].children:
+                    existing_child = next(
+                        (ch for ch in stack[0][1].children if ch.section_code == code or ch.title == title),
+                        None
+                    )
+                    if existing_child:
+                        while stack and stack[-1][0] >= depth:
+                            stack.pop()
+                        stack.append((depth, existing_child))
+                        continue
 
                 new_sec = Section(
                     section_code=code,

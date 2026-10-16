@@ -32,23 +32,26 @@ HEADER_KEYWORDS = {
     "unit", "uom", "u/m",
     "rate", "price", "net rate", "gross rate", "unit rate",
     "amount", "total", "total amount", "cost", "value",
+    "page", "page no", "page no.", "page_no",
 }
 
 SECTION_KEYWORDS_RE = re.compile(
     r"^(?:BILL\s+NO\.?|SECTION\s+NO\.?|TRADE|STAGE|PHASE|PART|DIVISION)\s*[\d\w.-]+|"
-    r"^\d{4}\s+[A-Z]|"
     r"^[A-Z0-9.\-]+\s+(?:WORKS|PRELIMINARIES|EARTHWORK|CONCRETE|MASONRY|FINISHING|PLASTERING|FLOORING|PAINTING|PLUMBING|ELECTRICAL)",
     re.IGNORECASE
 )
 
 PAGE_NUM_RE = re.compile(r"^(?:PAGE\s*)?-?\s*\d+\s*(?:OF\s*\d+)?\s*-?$", re.IGNORECASE)
-CARRIED_FORWARD_RE = re.compile(r"^(?:Brought\s+Forward|Carried\s+Forward|Carried\s+to\s+Summary)", re.IGNORECASE)
+CARRIED_FORWARD_RE = re.compile(
+    r"^(?:Brought\s+Forward|Carried\s+Forward|Carried\s+to\s+(?:Final\s+)?Summary|Carried\s+to\s+Form\s+of\s+Tender|Carried\s+Forward\s+to\s+Summary)",
+    re.IGNORECASE
+)
 
 
 @dataclass
 class ColumnDef:
     """A detected table column with its horizontal boundaries and inferred role."""
-    name: str              # e.g. "item_no", "description", "quantity", "unit", "rate", "amount"
+    name: str              # e.g. "item_no", "description", "quantity", "unit", "rate", "amount", "page_ref"
     x_min: float
     x_max: float
     header_text: str = ""
@@ -63,6 +66,8 @@ class TableStructure:
     header_y1: float
     page_num: int
     has_headers: bool = True
+    is_summary_table: bool = False
+    summary_type: Optional[str] = None
 
     def find_column(self, x_center: float) -> Optional[ColumnDef]:
         """Find matching column for a given x coordinate."""
@@ -83,10 +88,23 @@ class StructureDiscovery:
         self.ollama_adapter = ollama_adapter
         self.active_table: Optional[TableStructure] = None
 
+    @staticmethod
+    def detect_summary_page(page: PageData) -> Optional[str]:
+        """Detect whether this page is a section or final summary page."""
+        for line in page.lines[:10]:
+            t = line.text.strip().upper()
+            if "FINAL SUMMARY" in t:
+                return "final_summary"
+            if "SECTION SUMMARY" in t:
+                return "section_summary"
+        return None
+
     def detect_table_header(self, page: PageData) -> Optional[TableStructure]:
         """
         Scan page lines to find a table header row containing recognized column keywords.
         """
+        summary_type = self.detect_summary_page(page)
+
         for line in page.lines:
             words = line.words
             if len(words) < 2:
@@ -102,18 +120,37 @@ class StructureDiscovery:
                         break
 
             # If we matched 3 or more column keywords in the same horizontal band
+            # Or on summary pages 2 keywords e.g. "Bill Page Amount" or "Section Page Amount"
             unique_kws = {kw for _, kw in matched_keywords}
-            if len(unique_kws) >= 3:
+            min_kws = 2 if summary_type else 3
+            if len(unique_kws) >= min_kws:
                 cols = self._build_columns_from_header_line(line, page.width)
-                if len(cols) >= 3:
+                if len(cols) >= 2:
+                    h_y1 = line.y1
+                    # Check if the subsequent line is a continuation of the header (e.g. "No No")
+                    try:
+                        line_idx = page.lines.index(line)
+                        if line_idx + 1 < len(page.lines):
+                            next_l = page.lines[line_idx + 1]
+                            if 0 <= next_l.y0 - line.y1 < 16.0:
+                                next_words = [w.text.lower().strip(",.:;/()") for w in next_l.words]
+                                if all(w in HEADER_KEYWORDS or w in ("no", "no.", "rate", "qty", "unit") for w in next_words):
+                                    h_y1 = next_l.y1
+                    except ValueError:
+                        pass
+
                     struct = TableStructure(
                         columns=cols,
                         header_y0=line.y0,
-                        header_y1=line.y1,
+                        header_y1=h_y1,
                         page_num=page.page_num,
                         has_headers=True,
+                        is_summary_table=bool(summary_type),
+                        summary_type=summary_type,
                     )
-                    self.active_table = struct
+                    # Don't persist summary table structure across ordinary bill pages
+                    if not summary_type:
+                        self.active_table = struct
                     return struct
 
         return self.active_table
@@ -200,7 +237,9 @@ class StructureDiscovery:
     def _classify_header_text(text: str) -> str:
         """Map text to a standardized column role."""
         t = text.lower().strip()
-        if any(k in t for k in ("item", "sl", "sr", "no.", "no")):
+        if any(k in t for k in ("page no", "page no.", "page_no", "page")):
+            return "page_ref"
+        elif any(k in t for k in ("item", "bill", "section", "sl", "sr", "no.", "no")):
             return "item_no"
         elif any(k in t for k in ("desc", "particular", "work", "specification", "activity")):
             return "description"
@@ -216,7 +255,7 @@ class StructureDiscovery:
 
     @staticmethod
     def is_page_header_or_footer(line: TextLine, page_height: float) -> bool:
-        """Filter out running headers, page numbers, and brought/carried forward totals."""
+        """Filter out running headers, page numbers, and breadcrumbs."""
         t = line.text.strip()
         if not t:
             return True
@@ -225,18 +264,17 @@ class StructureDiscovery:
         if line.y1 <= 65.0:
             return True
 
-        # Running footer bottom margin (bottom ~150pt if matching breadcrumb or totals)
-        if line.y0 >= (page_height - 150.0):
-            if PAGE_NUM_RE.match(t) or CARRIED_FORWARD_RE.match(t):
-                return True
-            if re.search(r"^(?:Section\s+No\.?|Bill\s+No\.?|Page|\-\s*\d+\s*\-|R\s*[\d,]+)", t, re.IGNORECASE):
+        # Page numbers
+        if PAGE_NUM_RE.match(t):
+            return True
+
+        # Bottom breadcrumbs (not totals)
+        if line.y0 >= (page_height - 160.0):
+            if re.search(r"^(?:Section\s+No\.?|Bill\s+No\.?|HOUSE\s+MALULEKE|\-\s*\d+\s*\-)$", t, re.IGNORECASE):
                 return True
 
         # Bottom absolute margin
         if line.y1 >= (page_height - 35.0):
-            return True
-
-        if PAGE_NUM_RE.match(t) or CARRIED_FORWARD_RE.match(t):
             return True
 
         return False
