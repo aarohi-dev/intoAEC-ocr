@@ -53,7 +53,7 @@ boqparse = "boqparser.cli:main"
 [project.optional-dependencies]
 gpu = [
     "torch>=2.7.0",
-    "transformers==4.57.3",
+    "transformers==5.16.1",
     "vllm==0.11.2"
 ]
 
