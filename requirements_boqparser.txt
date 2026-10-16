@@ -2,7 +2,7 @@
 # The olmocr package (and its deps like pypdfium2, pypdf, Pillow, httpx) must already be installed.
 
 # API
-fastapi>=0.111.0
+fastapi>=0.141.1
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 
